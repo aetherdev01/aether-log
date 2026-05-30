@@ -48,7 +48,7 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
 
         externalFileUri = when (intent?.action) {
-            Intent.ACTION_VIEW -> intent.data
+            Intent.ACTION_VIEW -> intent.data?.also { uri -> persistUriPermission(uri, intent) }
             else               -> null
         }
 
@@ -115,7 +115,7 @@ class MainActivity : ComponentActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         if (intent.action == Intent.ACTION_VIEW) {
-            externalFileUri = intent.data
+            externalFileUri = intent.data?.also { uri -> persistUriPermission(uri, intent) }
         }
     }
 
@@ -145,6 +145,23 @@ class MainActivity : ComponentActivity() {
             },
             onFailed = onFailed
         )
+    }
+
+    /**
+     * Persist URI permission segera saat intent ACTION_VIEW diterima.
+     * Tanpa ini, permission ephemeral dari file manager hangus saat Activity
+     * di-recreate (rotate, memory trim, kembali dari background).
+     */
+    private fun persistUriPermission(uri: Uri, intent: Intent) {
+        val flags = intent.flags and (
+            Intent.FLAG_GRANT_READ_URI_PERMISSION or
+            Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+        )
+        try {
+            contentResolver.takePersistableUriPermission(uri, flags)
+        } catch (_: SecurityException) {
+            // URI tidak support persistable (misal file:// scheme) — abaikan
+        }
     }
 
     /**
