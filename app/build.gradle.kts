@@ -137,6 +137,9 @@ dependencies {
     // Gson (serialisasi)
     implementation(libs.gson)
 
+    // Material Components (XML themes)
+    implementation(libs.material)
+
     // Accompanist
     implementation(libs.accompanist.systemuicontroller)
 }
