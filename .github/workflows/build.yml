@@ -49,9 +49,9 @@ jobs:
       # ── 7. Setup keystore ────────────────────────────────────────────────────
       - name: Setup signing
         run: |
-          echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 -d > loglog.jks
+          echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 -d > log.jks
           cat > local.properties << 'EOF'
-          STORE_FILE=loglog.jks
+          STORE_FILE=log.jks
           STORE_PASSWORD=${{ secrets.STORE_PASSWORD }}
           KEY_ALIAS=${{ secrets.KEY_ALIAS }}
           KEY_PASSWORD=${{ secrets.KEY_PASSWORD }}
