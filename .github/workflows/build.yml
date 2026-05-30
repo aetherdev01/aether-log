@@ -23,7 +23,21 @@ jobs:
           distribution: temurin
           java-version: 17
 
-      # ── 3. Gradle cache ──────────────────────────────────────────────────────
+      # ── 3. Setup Gradle ───────────────────────────────────────────────────────
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.13"
+
+      # ── 4. Generate gradlew (repo tidak menyertakan gradlew) ─────────────────
+      - name: Generate Gradle wrapper
+        run: gradle wrapper --gradle-version 8.13
+
+      # ── 5. Gradle wrapper permission ─────────────────────────────────────────
+      - name: Grant execute permission
+        run: chmod +x ./gradlew
+
+      # ── 6. Gradle cache ──────────────────────────────────────────────────────
       - name: Cache Gradle
         uses: actions/cache@v4
         with:
@@ -33,11 +47,7 @@ jobs:
           key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/libs.versions.toml', '**/gradle-wrapper.properties') }}
           restore-keys: ${{ runner.os }}-gradle-
 
-      # ── 4. Gradle wrapper permission ─────────────────────────────────────────
-      - name: Grant execute permission
-        run: chmod +x ./gradlew
-
-      # ── 5. Build Debug APK (setiap push ke main) ─────────────────────────────
+      # ── 7. Build Debug APK (setiap push ke main) ─────────────────────────────
       - name: Build Debug APK
         run: ./gradlew assembleDebug --no-daemon --stacktrace
 
@@ -48,7 +58,7 @@ jobs:
           path: app/build/outputs/apk/debug/loglog-v*-debug.apk
           if-no-files-found: warn
 
-      # ── 6. Setup keystore + local.properties (hanya saat tag) ────────────────
+      # ── 8. Setup keystore + local.properties (hanya saat tag) ────────────────
       - name: Setup signing
         if: startsWith(github.ref, 'refs/tags/v')
         run: |
@@ -60,12 +70,12 @@ jobs:
           KEY_PASSWORD=${{ secrets.KEY_PASSWORD }}
           EOF2
 
-      # ── 7. Build Release APK (hanya saat push tag v*.*) ─────────────────────
+      # ── 9. Build Release APK (hanya saat push tag v*.*) ─────────────────────
       - name: Build Release APK
         if: startsWith(github.ref, 'refs/tags/v')
         run: ./gradlew assembleRelease --no-daemon --stacktrace
 
-      # ── 8. Buat GitHub Release dan upload APK ────────────────────────────────
+      # ── 10. Buat GitHub Release dan upload APK ───────────────────────────────
       - name: Create GitHub Release
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
@@ -79,7 +89,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      # ── 9. Notif Telegram ────────────────────────────────────────────────────
+      # ── 11. Notif Telegram ───────────────────────────────────────────────────
       - name: Telegram Notification
         if: always()
         run: |
