@@ -14,10 +14,8 @@
     <path
         android:fillColor="#FFFFFFFF"
         android:pathData="M30,64 H74 Q78,64 78,68 V68 Q78,72 74,72 H30 Q26,72 26,68 V68 Q26,64 30,64Z" />
-    <!-- Small dot accent -->
-    <circle
+    <!-- Small dot accent (circle r=6 center 84,68) -->
+    <path
         android:fillColor="#FFB8C4FF"
-        android:cx="84"
-        android:cy="68"
-        android:r="6" />
+        android:pathData="M84,62 A6,6 0 1,1 83.999,62 Z" />
 </vector>
