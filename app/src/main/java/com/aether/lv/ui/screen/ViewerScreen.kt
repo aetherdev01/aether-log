@@ -90,10 +90,11 @@ fun ViewerScreen(
                                 overflow = TextOverflow.Ellipsis
                             )
                             if (!state.isLoading) {
-                                val display = if (state.searchQuery.isBlank())
+                                val lineInfo = if (state.searchQuery.isBlank())
                                     "${state.totalLines} baris"
                                 else
                                     "${state.filteredLines.size} / ${state.totalLines} baris"
+                                val display = if (state.isGzipped) "GZ  ·  $lineInfo" else lineInfo
                                 Text(
                                     display,
                                     style = MaterialTheme.typography.labelSmall,

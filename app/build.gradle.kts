@@ -25,6 +25,9 @@ android {
         versionCode           = 110
         versionName           = "1.1"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        ndk {
+            abiFilters += setOf("arm64-v8a", "armeabi-v7a")
+        }
     }
 
     signingConfigs {

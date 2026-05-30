@@ -1,11 +1,13 @@
 package com.aether.lv.data.repository
 
 import android.content.Context
+import android.content.Intent
 import android.net.Uri
 import android.provider.OpenableColumns
 import com.aether.lv.data.db.RecentFileDao
 import com.aether.lv.data.model.RecentFile
 import com.aether.lv.util.FileTypeUtil
+import com.aether.lv.util.GzipUtil
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.withContext
@@ -18,9 +20,20 @@ class FileRepository(
     val recentFiles: Flow<List<RecentFile>> = dao.getAllFlow()
 
     suspend fun saveRecent(uri: Uri, lineCount: Int = 0) = withContext(Dispatchers.IO) {
+        // Ambil persistent permission agar URI tetap bisa dibuka di sesi berikutnya.
+        // ACTION_OPEN_DOCUMENT hanya memberi temporary permission; takePersistableUriPermission
+        // membuatnya permanen sehingga file di riwayat bisa dibuka tanpa permission denial.
+        try {
+            context.contentResolver.takePersistableUriPermission(
+                uri,
+                Intent.FLAG_GRANT_READ_URI_PERMISSION
+            )
+        } catch (_: SecurityException) {
+            // URI dari sumber eksternal (ACTION_SEND/share) tidak support persistable — aman diabaikan
+        }
+
         val info = queryFileInfo(uri)
         val ext  = FileTypeUtil.extensionOf(info.name)
-        // Simpan semua tipe file yang berhasil dibuka, bukan hanya yang ada di ALLOWED list
         dao.upsert(
             RecentFile(
                 path         = uri.toString(),
@@ -45,12 +58,14 @@ class FileRepository(
         uri: Uri,
         maxLines: Int = 30_000
     ): Result<List<String>> = withContext(Dispatchers.IO) {
-        // Coba UTF-8 dulu
+        // Coba UTF-8 dulu (dengan auto-decompress jika GZIP)
         val result = runCatching {
-            val stream = context.contentResolver.openInputStream(uri)
+            val raw = context.contentResolver.openInputStream(uri)
                 ?: return@runCatching Result.failure<List<String>>(
                     IllegalStateException("Tidak dapat membuka file. Pastikan file masih ada dan izin storage sudah diberikan.")
                 )
+            // Wrap dengan GZIPInputStream secara otomatis jika magic bytes cocok
+            val stream = GzipUtil.wrapIfNeeded(raw)
             stream.bufferedReader(Charsets.UTF_8).use { reader ->
                 val lines = ArrayList<String>(minOf(maxLines, 2048))
                 var count = 0
@@ -68,10 +83,12 @@ class FileRepository(
         }
 
         // Kalau UTF-8 gagal (misal file binary/latin), fallback ke ISO-8859-1
+        // Tetap pakai GzipUtil.wrapIfNeeded agar .gz latin juga ter-handle
         if (result.isFailure) {
             runCatching {
-                val stream2 = context.contentResolver.openInputStream(uri)
+                val raw2 = context.contentResolver.openInputStream(uri)
                     ?: return@runCatching Result.failure(IllegalStateException("Tidak dapat membuka file."))
+                val stream2 = GzipUtil.wrapIfNeeded(raw2)
                 stream2.bufferedReader(Charsets.ISO_8859_1).use { reader ->
                     val lines = ArrayList<String>(minOf(maxLines, 2048))
                     var count = 0

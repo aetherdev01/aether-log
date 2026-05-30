@@ -7,6 +7,7 @@ import androidx.lifecycle.viewModelScope
 import com.aether.lv.LogLogApplication
 import com.aether.lv.data.preferences.ThemePreferences
 import com.aether.lv.data.repository.FileRepository
+import com.aether.lv.util.GzipUtil
 import com.aether.lv.util.LogLineParser
 import com.aether.lv.util.ParsedLine
 import kotlinx.coroutines.flow.*
@@ -24,6 +25,7 @@ data class ViewerUiState(
     val wrapLines    : Boolean          = false,
     val showLineNums  : Boolean         = true,
     val jumpToEnd    : Boolean          = false,
+    val isGzipped    : Boolean          = false,   // true jika file aslinya .gz
 )
 
 class ViewerViewModel(application: Application) : AndroidViewModel(application) {
@@ -80,7 +82,11 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
         loadedUri = uri
 
         viewModelScope.launch {
-            _state.update { it.copy(isLoading = true, error = null, fileName = fileName) }
+            // Strip .gz suffix untuk nama tampilan yang lebih bersih
+            val isGzipped   = fileName.endsWith(".gz", ignoreCase = true)
+            val displayName = if (isGzipped) GzipUtil.stripGzSuffix(fileName) else fileName
+
+            _state.update { it.copy(isLoading = true, error = null, fileName = displayName, isGzipped = isGzipped) }
             repo.readLines(uri).onSuccess { rawLines ->
                 val colors = _state.value.applyColors
                 val parsed = rawLines.map { line ->
