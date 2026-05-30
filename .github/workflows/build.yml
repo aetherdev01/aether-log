@@ -86,8 +86,9 @@ jobs:
             MSG="Build <b>LogLog</b> gagal"
           fi
 
+          TEXT="${EMOJI} ${MSG}"$'\n'"<code>${SHA_SHORT}</code> — <a href=\"${RUN_URL}\">lihat detail</a>"
+
           curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
             -d chat_id="${{ secrets.TELEGRAM_CHAT_ID }}" \
             -d parse_mode="HTML" \
-            -d text="${EMOJI} ${MSG}
-<code>${SHA_SHORT}</code> — <a href=\"${RUN_URL}\">lihat detail</a>" || true
+            -d "text=${TEXT}" || true
