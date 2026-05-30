@@ -448,12 +448,14 @@ private fun ErrorState(
     onRequestPermission : () -> Unit = {},
     modifier            : Modifier = Modifier
 ) {
-    // Deteksi apakah error kemungkinan disebabkan permission
+    // Deteksi apakah error disebabkan permission / URI kedaluwarsa
     val isPermissionError = message.contains("permission", ignoreCase = true) ||
         message.contains("izin", ignoreCase = true) ||
         message.contains("denied", ignoreCase = true) ||
         message.contains("SecurityException", ignoreCase = true) ||
-        message.contains("tidak dapat membuka", ignoreCase = true)
+        message.contains("tidak dapat membuka", ignoreCase = true) ||
+        message.contains("dicabut", ignoreCase = true) ||
+        message.contains("kedaluwarsa", ignoreCase = true)
 
     Column(
         modifier            = modifier.padding(24.dp),
@@ -476,9 +478,9 @@ private fun ErrorState(
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
-        // Tombol "Izinkan Akses" muncul hanya jika error kemungkinan permission-related
         if (isPermissionError) {
             Spacer(Modifier.height(16.dp))
+            // Tombol utama: minta izin storage
             OutlinedButton(onClick = onRequestPermission) {
                 Icon(
                     Icons.Outlined.LockOpen, null,

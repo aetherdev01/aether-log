@@ -27,6 +27,11 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         repo.recentFiles.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     init {
+        // Bersihkan riwayat yang URI-nya sudah tidak accessible (persistent permission dicabut
+        // atau file dihapus). Ini mencegah "Permission Denial" saat user tap item di riwayat.
+        viewModelScope.launch {
+            repo.pruneInaccessibleRecents()
+        }
         // Cek update dengan sedikit delay agar UI tidak blocked saat launch
         viewModelScope.launch {
             delay(1_500)

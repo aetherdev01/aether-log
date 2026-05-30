@@ -21,15 +21,23 @@ class FileRepository(
 
     suspend fun saveRecent(uri: Uri, lineCount: Int = 0) = withContext(Dispatchers.IO) {
         // Ambil persistent permission agar URI tetap bisa dibuka di sesi berikutnya.
-        // ACTION_OPEN_DOCUMENT hanya memberi temporary permission; takePersistableUriPermission
-        // membuatnya permanen sehingga file di riwayat bisa dibuka tanpa permission denial.
-        try {
-            context.contentResolver.takePersistableUriPermission(
-                uri,
-                Intent.FLAG_GRANT_READ_URI_PERMISSION
-            )
-        } catch (_: SecurityException) {
-            // URI dari sumber eksternal (ACTION_SEND/share) tidak support persistable — aman diabaikan
+        // ACTION_OPEN_DOCUMENT memberi FLAG_GRANT_PERSISTABLE_URI_PERMISSION; kita harus
+        // secara eksplisit "claim" permission itu via takePersistableUriPermission.
+        // Cek dulu apakah permission sudah ada (idempoten) untuk menghindari SecurityException
+        // pada URI dari ACTION_VIEW / share yang tidak support persistable grant.
+        val alreadyPersisted = context.contentResolver.persistedUriPermissions.any { perm ->
+            perm.uri == uri && perm.isReadPermission
+        }
+        if (!alreadyPersisted) {
+            try {
+                context.contentResolver.takePersistableUriPermission(
+                    uri,
+                    Intent.FLAG_GRANT_READ_URI_PERMISSION
+                )
+            } catch (_: SecurityException) {
+                // URI dari ACTION_VIEW/share eksternal tidak support persistable — aman diabaikan.
+                // File tetap bisa dibuka selama session ini; riwayat disimpan tanpa persistent grant.
+            }
         }
 
         val info = queryFileInfo(uri)
@@ -53,11 +61,24 @@ class FileRepository(
     /**
      * Membaca semua baris dari URI dengan penanganan error yang proper.
      * Maksimum [maxLines] baris untuk mencegah OOM pada file sangat besar.
+     *
+     * SecurityException di-propagate langsung (tidak di-retry dengan encoding lain)
+     * karena fallback encoding tidak akan membantu jika masalahnya permission.
      */
     suspend fun readLines(
         uri: Uri,
         maxLines: Int = 30_000
     ): Result<List<String>> = withContext(Dispatchers.IO) {
+        // SecurityException harus langsung fail — jangan di-swallow oleh runCatching outer
+        // karena retry ISO-8859-1 tidak akan berhasil jika izin memang tidak ada.
+        try {
+            context.contentResolver.openInputStream(uri)
+        } catch (e: SecurityException) {
+            return@withContext Result.failure(e)
+        } ?: return@withContext Result.failure(
+            IllegalStateException("Tidak dapat membuka file. Pastikan file masih ada dan izin storage sudah diberikan.")
+        )
+
         // Coba UTF-8 dulu (dengan auto-decompress jika GZIP)
         val result = runCatching {
             val raw = context.contentResolver.openInputStream(uri)
@@ -79,6 +100,8 @@ class FileRepository(
                 Result.success(lines)
             }
         }.getOrElse { e ->
+            // Jangan swallow SecurityException — propagate langsung
+            if (e is SecurityException) return@withContext Result.failure(e)
             Result.failure(e)
         }
 
@@ -98,9 +121,38 @@ class FileRepository(
                     }
                     Result.success(lines)
                 }
-            }.getOrElse { e -> Result.failure(e) }
+            }.getOrElse { e ->
+                if (e is SecurityException) Result.failure(e)
+                else Result.failure(e)
+            }
         } else {
             result
+        }
+    }
+
+    /**
+     * Cek apakah URI masih bisa diakses (persistent permission belum dicabut system).
+     * Digunakan HomeScreen sebelum membuka file dari riwayat.
+     */
+    fun isUriAccessible(uri: Uri): Boolean {
+        return try {
+            context.contentResolver.openInputStream(uri)?.use { true } ?: false
+        } catch (_: SecurityException) { false }
+        catch (_: Exception) { false }
+    }
+
+    /**
+     * Hapus entri riwayat yang URI-nya sudah tidak accessible (permission dicabut / file dihapus).
+     * Panggil ini saat HomeScreen pertama kali load untuk membersihkan stale entries.
+     */
+    suspend fun pruneInaccessibleRecents() = withContext(Dispatchers.IO) {
+        val all = dao.getAll()
+        all.forEach { file ->
+            val uri = Uri.parse(file.path)
+            // Hanya prune content:// URI — file:// path tidak perlu persistent permission
+            if (uri.scheme == "content" && !isUriAccessible(uri)) {
+                dao.deleteByPath(file.path)
+            }
         }
     }
 

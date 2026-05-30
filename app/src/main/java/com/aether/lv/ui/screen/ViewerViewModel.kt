@@ -103,7 +103,22 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                 }
                 repo.saveRecent(uri, lineCount = rawLines.size)
             }.onFailure { e ->
-                _state.update { it.copy(isLoading = false, error = e.message ?: "Gagal membaca file") }
+                // Bedakan pesan error agar UI bisa tampilkan tombol yang tepat
+                val message = when (e) {
+                    is SecurityException -> {
+                        // Ini yang muncul di foto: Permission Denial dari ExternalStorageProvider.
+                        // Terjadi ketika URI dari riwayat tidak lagi punya persistent permission,
+                        // atau URI dari ACTION_VIEW tidak di-grant oleh caller.
+                        "Izin akses file dicabut atau kedaluwarsa.\n\nSilakan buka file ini lagi melalui tombol \"Buka File\" agar izin diperbaharui."
+                    }
+                    is java.io.FileNotFoundException ->
+                        "File tidak ditemukan. Mungkin sudah dipindah atau dihapus."
+                    is java.io.IOException ->
+                        "Gagal membaca file: ${e.message ?: "Error I/O tidak diketahui"}"
+                    else ->
+                        e.message ?: "Gagal membaca file"
+                }
+                _state.update { it.copy(isLoading = false, error = message) }
                 // Reset loadedUri agar bisa di-retry
                 loadedUri = null
             }

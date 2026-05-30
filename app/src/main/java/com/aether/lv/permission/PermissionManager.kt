@@ -51,24 +51,35 @@ object PermissionManager {
     }
 
     /**
-     * Cek apakah semua permission storage sudah di-grant.
+     * Cek apakah permission storage sudah di-grant.
+     *
+     * Catatan penting:
+     * - Untuk SAF (ACTION_OPEN_DOCUMENT) flow: runtime permission TIDAK wajib.
+     *   Yang penting adalah persistent URI permission via takePersistableUriPermission.
+     * - Untuk path langsung (file://): READ_EXTERNAL_STORAGE / READ_MEDIA_* diperlukan.
+     * - MANAGE_EXTERNAL_STORAGE memberi akses penuh ke semua file di Android 11+.
      */
     fun hasStoragePermission(context: Context): Boolean {
-        // MANAGE_EXTERNAL_STORAGE check terpisah (API 30+)
+        // Android 11+: MANAGE_EXTERNAL_STORAGE memberi akses penuh
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
             if (Environment.isExternalStorageManager()) return true
         }
-        // Fallback: cek individual permissions
+        // Fallback: cek semua runtime permissions yang relevan untuk API level ini
         return requiredPermissions().all { perm ->
             ContextCompat.checkSelfPermission(context, perm) == PackageManager.PERMISSION_GRANTED
         }
     }
 
     /**
-     * Cek apakah READ permission dasar sudah granted (untuk SAF flow yang lebih ringan).
-     * Berbeda dengan [hasStoragePermission] yang lebih strict untuk path langsung.
+     * Cek apakah READ permission dasar sudah granted.
+     * Untuk SAF flow: ini opsional. Untuk path langsung: wajib.
+     * Return true jika SALAH SATU permission tersedia (berbeda dengan hasStoragePermission
+     * yang perlu SEMUA permission).
      */
     fun hasBasicReadPermission(context: Context): Boolean {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            if (Environment.isExternalStorageManager()) return true
+        }
         return requiredPermissions().any { perm ->
             ContextCompat.checkSelfPermission(context, perm) == PackageManager.PERMISSION_GRANTED
         }
