@@ -8,10 +8,10 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.aether.lv.data.preferences.ThemePreferences
-import com.aether.lv.ui.screen.HomeScreen
-import com.aether.lv.ui.screen.ViewerScreen
-import com.aether.lv.ui.screen.SettingsScreen
 import com.aether.lv.ui.screen.AboutScreen
+import com.aether.lv.ui.screen.HomeScreen
+import com.aether.lv.ui.screen.SettingsScreen
+import com.aether.lv.ui.screen.ViewerScreen
 
 sealed class Screen(val route: String) {
     object Home     : Screen("home")
@@ -45,36 +45,39 @@ fun LogLogApp(
     ) {
         composable(Screen.Home.route) {
             HomeScreen(
-                onOpenFile   = { uri ->
+                onOpenFile = { uri ->
                     val encoded = Uri.encode(uri.toString())
                     navController.navigate(Screen.Viewer.createRoute(encoded))
                 },
-                onSettings   = { navController.navigate(Screen.Settings.route) },
-                onAbout      = { navController.navigate(Screen.About.route) }
+                onSettings = { navController.navigate(Screen.Settings.route) },
+                onAbout    = { navController.navigate(Screen.About.route) }
             )
         }
+
         composable(
             route     = Screen.Viewer.route,
             arguments = listOf(navArgument("uri") {
-                type     = NavType.StringType
-                nullable = true
+                type         = NavType.StringType
+                nullable     = true
                 defaultValue = null
             })
         ) { backStack ->
             val rawUri = backStack.arguments?.getString("uri")
             val uri    = rawUri?.let { Uri.parse(Uri.decode(it)) }
             ViewerScreen(
-                fileUri  = uri,
-                onBack   = { navController.popBackStack() },
+                fileUri    = uri,
+                onBack     = { navController.popBackStack() },
                 onSettings = { navController.navigate(Screen.Settings.route) }
             )
         }
+
         composable(Screen.Settings.route) {
             SettingsScreen(
                 themePrefs = themePrefs,
                 onBack     = { navController.popBackStack() }
             )
         }
+
         composable(Screen.About.route) {
             AboutScreen(onBack = { navController.popBackStack() })
         }

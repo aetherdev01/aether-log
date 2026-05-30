@@ -38,7 +38,7 @@ class FileRepository(
 
     // ─── Baca konten file ───────────────────────────────────────────────────
     /**
-     * Membaca semua baris dari URI.
+     * Membaca semua baris dari URI dengan penanganan error yang proper.
      * Maksimum [maxLines] baris untuk mencegah OOM pada file sangat besar.
      */
     suspend fun readLines(
@@ -46,7 +46,12 @@ class FileRepository(
         maxLines: Int = 20_000
     ): Result<List<String>> = withContext(Dispatchers.IO) {
         runCatching {
-            context.contentResolver.openInputStream(uri)!!.bufferedReader().use { reader ->
+            val stream = context.contentResolver.openInputStream(uri)
+                ?: return@runCatching listOf<String>().also {
+                    error("Tidak dapat membuka file. Pastikan file masih ada dan izin storage sudah diberikan.")
+                }
+
+            stream.bufferedReader(Charsets.UTF_8).use { reader ->
                 val lines = ArrayList<String>(minOf(maxLines, 1024))
                 var count = 0
                 reader.forEachLine { line ->
@@ -58,6 +63,19 @@ class FileRepository(
                 }
                 lines
             }
+        }.recoverCatching { e ->
+            // Coba fallback dengan charset lain jika UTF-8 gagal
+            val stream2 = context.contentResolver.openInputStream(uri)
+                ?: error("Tidak dapat membuka file.")
+            stream2.bufferedReader(Charsets.ISO_8859_1).use { reader ->
+                val lines = ArrayList<String>(minOf(maxLines, 1024))
+                var count = 0
+                reader.forEachLine { line ->
+                    if (count < maxLines) lines.add(line)
+                    count++
+                }
+                lines
+            }
         }
     }
 
@@ -65,16 +83,18 @@ class FileRepository(
      * Info file dari ContentResolver.
      */
     private fun queryFileInfo(uri: Uri): FileInfo {
-        var name = uri.lastPathSegment ?: "file.log"
+        var name = uri.lastPathSegment?.substringAfterLast('/') ?: "file.log"
         var size = 0L
-        context.contentResolver.query(uri, null, null, null, null)?.use { cursor ->
-            val nameIdx = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
-            val sizeIdx = cursor.getColumnIndex(OpenableColumns.SIZE)
-            if (cursor.moveToFirst()) {
-                if (nameIdx >= 0) name = cursor.getString(nameIdx) ?: name
-                if (sizeIdx >= 0) size = cursor.getLong(sizeIdx)
+        try {
+            context.contentResolver.query(uri, null, null, null, null)?.use { cursor ->
+                val nameIdx = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+                val sizeIdx = cursor.getColumnIndex(OpenableColumns.SIZE)
+                if (cursor.moveToFirst()) {
+                    if (nameIdx >= 0) name = cursor.getString(nameIdx) ?: name
+                    if (sizeIdx >= 0) size = cursor.getLong(sizeIdx)
+                }
             }
-        }
+        } catch (_: Exception) { /* fallback ke lastPathSegment */ }
         return FileInfo(name, size)
     }
 

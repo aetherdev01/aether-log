@@ -3,12 +3,11 @@ name: Build LogLog
 on:
   push:
     branches: [ main ]
-    tags:     [ 'v*.*' ]
   workflow_dispatch:
 
 jobs:
   build:
-    name: Build APK
+    name: Build Release APK
     runs-on: ubuntu-latest
 
     steps:
@@ -29,7 +28,7 @@ jobs:
         with:
           gradle-version: "8.13"
 
-      # ── 4. Generate gradlew (repo tidak menyertakan gradlew) ─────────────────
+      # ── 4. Generate gradlew ───────────────────────────────────────────────────
       - name: Generate Gradle wrapper
         run: gradle wrapper --gradle-version 8.13
 
@@ -47,67 +46,48 @@ jobs:
           key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/libs.versions.toml', '**/gradle-wrapper.properties') }}
           restore-keys: ${{ runner.os }}-gradle-
 
-      # ── 7. Build Debug APK (setiap push ke main) ─────────────────────────────
-      - name: Build Debug APK
-        run: ./gradlew assembleDebug --no-daemon --stacktrace
-
-      - name: Upload Debug APK artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: loglog-debug
-          path: app/build/outputs/apk/debug/loglog-v*-debug.apk
-          if-no-files-found: warn
-
-      # ── 8. Setup keystore + local.properties (hanya saat tag) ────────────────
+      # ── 7. Setup keystore ────────────────────────────────────────────────────
       - name: Setup signing
-        if: startsWith(github.ref, 'refs/tags/v')
         run: |
           echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 -d > loglog.jks
-          cat > local.properties << EOF2
+          cat > local.properties << 'EOF'
           STORE_FILE=loglog.jks
           STORE_PASSWORD=${{ secrets.STORE_PASSWORD }}
           KEY_ALIAS=${{ secrets.KEY_ALIAS }}
           KEY_PASSWORD=${{ secrets.KEY_PASSWORD }}
-          EOF2
+          EOF
 
-      # ── 9. Build Release APK (hanya saat push tag v*.*) ─────────────────────
+      # ── 8. Build Release APK ─────────────────────────────────────────────────
       - name: Build Release APK
-        if: startsWith(github.ref, 'refs/tags/v')
         run: ./gradlew assembleRelease --no-daemon --stacktrace
 
-      # ── 10. Buat GitHub Release dan upload APK ───────────────────────────────
-      - name: Create GitHub Release
-        if: startsWith(github.ref, 'refs/tags/v')
-        uses: softprops/action-gh-release@v2
+      # ── 9. Upload artifact ───────────────────────────────────────────────────
+      - name: Upload Release APK
+        uses: actions/upload-artifact@v4
         with:
-          files: |
-            app/build/outputs/apk/release/loglog-v*-release.apk
-            app/build/outputs/apk/debug/loglog-v*-debug.apk
-          generate_release_notes: true
-          draft: false
-          prerelease: false
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          name: loglog-release-${{ github.run_number }}
+          path: app/build/outputs/apk/release/loglog-v*-release.apk
+          if-no-files-found: error
 
-      # ── 11. Notif Telegram ───────────────────────────────────────────────────
+      # ── 10. Notif Telegram ───────────────────────────────────────────────────
       - name: Telegram Notification
         if: always()
         run: |
           STATUS="${{ job.status }}"
-          REF="${{ github.ref_name }}"
+          SHA="${{ github.sha }}"
+          SHA_SHORT="${SHA:0:7}"
           RUN_URL="https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
 
           if [ "$STATUS" = "success" ]; then
             EMOJI="✅"
-            MSG="Build *LogLog* berhasil!"
+            MSG="Build <b>LogLog</b> berhasil"
           else
             EMOJI="❌"
-            MSG="Build *LogLog* gagal!"
+            MSG="Build <b>LogLog</b> gagal"
           fi
 
           curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
             -d chat_id="${{ secrets.TELEGRAM_CHAT_ID }}" \
-            -d parse_mode="Markdown" \
+            -d parse_mode="HTML" \
             -d text="${EMOJI} ${MSG}
-          Ref: \`${REF}\`
-          [Lihat Detail](${RUN_URL})" || true
+<code>${SHA_SHORT}</code> — <a href=\"${RUN_URL}\">lihat detail</a>" || true
