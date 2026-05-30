@@ -77,10 +77,22 @@ class FileRepository(
         // karena SAF URI permission hanya dipegang oleh Activity/Process yang menerima intent
         val ctx = callerContext ?: context
 
+        // Untuk URI file:// — baca langsung via File, bypass ContentResolver
+        if (uri.scheme == "file") {
+            return@withContext readFromFile(uri.path ?: return@withContext Result.failure(
+                IllegalStateException("Path file tidak valid.")
+            ), maxLines)
+        }
+
         // Test akses awal — tangkap SecurityException segera
         try {
             ctx.contentResolver.openInputStream(uri)?.close()
         } catch (e: SecurityException) {
+            // Fallback: coba baca via File path langsung (untuk URI non-SAF)
+            val path = uri.path
+            if (path != null && java.io.File(path).exists()) {
+                return@withContext readFromFile(path, maxLines)
+            }
             return@withContext Result.failure(
                 SecurityException("Izin akses file ditolak. Silakan buka file kembali melalui tombol \"Buka File\".")
             )
@@ -160,6 +172,30 @@ class FileRepository(
             if (!isUriAccessible(uri)) {
                 dao.deleteByPath(file.path)
             }
+        }
+    }
+
+    private fun readFromFile(path: String, maxLines: Int): Result<List<String>> {
+        return try {
+            val file = java.io.File(path)
+            if (!file.exists()) return Result.failure(java.io.FileNotFoundException("File tidak ditemukan: $path"))
+            val stream = GzipUtil.wrapIfNeeded(file.inputStream())
+            stream.bufferedReader(Charsets.UTF_8).use { reader ->
+                val lines = ArrayList<String>(minOf(maxLines, 2048))
+                var count = 0
+                reader.forEachLine { line ->
+                    if (count < maxLines) lines.add(line)
+                    count++
+                }
+                if (count > maxLines) lines.add("── [${count - maxLines} baris lebih dipotong] ──")
+                Result.success(lines)
+            }
+        } catch (e: SecurityException) {
+            Result.failure(e)
+        } catch (e: java.io.IOException) {
+            Result.failure(e)
+        } catch (e: Exception) {
+            Result.failure(e)
         }
     }
 
