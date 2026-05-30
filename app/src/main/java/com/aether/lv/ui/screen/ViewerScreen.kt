@@ -36,10 +36,11 @@ import kotlinx.coroutines.launch
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ViewerScreen(
-    fileUri   : Uri?,
-    onBack    : () -> Unit,
-    onSettings: () -> Unit,
-    vm        : ViewerViewModel = viewModel()
+    fileUri             : Uri?,
+    onBack              : () -> Unit,
+    onSettings          : () -> Unit,
+    onRequestPermission : () -> Unit = {},
+    vm                  : ViewerViewModel = viewModel()
 ) {
     val state   by vm.state.collectAsStateWithLifecycle()
     val context  = LocalContext.current
@@ -247,7 +248,11 @@ fun ViewerScreen(
                     }
                 }
                 state.error != null -> {
-                    ErrorState(message = state.error!!, modifier = Modifier.align(Alignment.Center))
+                    ErrorState(
+                        message = state.error!!,
+                        onRequestPermission = onRequestPermission,
+                        modifier = Modifier.align(Alignment.Center)
+                    )
                 }
                 state.filteredLines.isEmpty() && state.searchQuery.isNotBlank() -> {
                     Text(
@@ -438,7 +443,18 @@ private fun LogLine(
 }
 
 @Composable
-private fun ErrorState(message: String, modifier: Modifier = Modifier) {
+private fun ErrorState(
+    message             : String,
+    onRequestPermission : () -> Unit = {},
+    modifier            : Modifier = Modifier
+) {
+    // Deteksi apakah error kemungkinan disebabkan permission
+    val isPermissionError = message.contains("permission", ignoreCase = true) ||
+        message.contains("izin", ignoreCase = true) ||
+        message.contains("denied", ignoreCase = true) ||
+        message.contains("SecurityException", ignoreCase = true) ||
+        message.contains("tidak dapat membuka", ignoreCase = true)
+
     Column(
         modifier            = modifier.padding(24.dp),
         horizontalAlignment = Alignment.CenterHorizontally
@@ -460,5 +476,17 @@ private fun ErrorState(message: String, modifier: Modifier = Modifier) {
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
+        // Tombol "Izinkan Akses" muncul hanya jika error kemungkinan permission-related
+        if (isPermissionError) {
+            Spacer(Modifier.height(16.dp))
+            OutlinedButton(onClick = onRequestPermission) {
+                Icon(
+                    Icons.Outlined.LockOpen, null,
+                    modifier = Modifier.size(16.dp)
+                )
+                Spacer(Modifier.width(6.dp))
+                Text("Izinkan Akses Storage")
+            }
+        }
     }
 }

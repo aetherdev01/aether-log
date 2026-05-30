@@ -3,14 +3,32 @@
     xmlns:tools="http://schemas.android.com/tools">
 
     <!-- ── Storage ───────────────────────────────────────────────────── -->
-    <!-- Hanya butuh READ_EXTERNAL_STORAGE di Android <= 12 -->
+    <!-- Android 11–12 (API 30–32): butuh READ untuk akses file external -->
     <uses-permission
         android:name="android.permission.READ_EXTERNAL_STORAGE"
         android:maxSdkVersion="32" />
 
+    <!-- Android 13+ (API 33+): READ_MEDIA granular per tipe -->
+    <!-- Untuk file log/txt/json/xml tidak ada kategori spesifik di READ_MEDIA_*,
+         jadi kita declare READ_MEDIA_IMAGES sebagai fallback "non-media" file picker -->
+    <uses-permission
+        android:name="android.permission.READ_MEDIA_IMAGES"
+        android:minSdkVersion="33" />
+
+    <!-- Android 11+ (API 30+): akses semua file — optional, muncul di Settings > Special App Access
+         Dibutuhkan jika user buka file via path langsung (bukan SAF picker) -->
+    <uses-permission
+        android:name="android.permission.MANAGE_EXTERNAL_STORAGE"
+        tools:ignore="ScopedStorage" />
+
     <!-- ── Update system ─────────────────────────────────────────────── -->
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+
+    <!-- WRITE hanya untuk cache APK update di internal cacheDir (tidak butuh di-request runtime) -->
+    <uses-permission
+        android:name="android.permission.WRITE_EXTERNAL_STORAGE"
+        android:maxSdkVersion="28" />
 
     <application
         android:name=".LogLogApplication"
@@ -23,6 +41,7 @@
         android:supportsRtl="true"
         android:theme="@style/Theme.LogLog"
         android:networkSecurityConfig="@xml/network_security_config"
+        android:requestLegacyExternalStorage="true"
         tools:targetApi="31">
 
         <activity

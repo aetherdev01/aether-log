@@ -22,8 +22,8 @@ android {
         applicationId         = "com.aether.lv"
         minSdk                = 30          // Android 11
         targetSdk             = 36          // Android 16
-        versionCode           = 110
-        versionName           = "1.1"
+        versionCode           = 130
+        versionName           = "1.3"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         ndk {
             abiFilters += setOf("arm64-v8a", "armeabi-v7a")

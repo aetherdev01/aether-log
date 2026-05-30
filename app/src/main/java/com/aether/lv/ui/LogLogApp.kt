@@ -24,15 +24,14 @@ sealed class Screen(val route: String) {
 
 @Composable
 fun LogLogApp(
-    externalFileUri: Uri?,
-    themePrefs: ThemePreferences
+    externalFileUri     : Uri?,
+    themePrefs          : ThemePreferences,
+    onRequestPermission : () -> Unit = {}   // callback ke MainActivity untuk trigger permission request
 ) {
     val navController = rememberNavController()
 
-    // Track uri yang sudah dihandle agar tidak navigate ulang saat recompose
     var handledExternalUri by remember { mutableStateOf<Uri?>(null) }
 
-    // Navigasi ke viewer bila ada file eksternal saat launch
     LaunchedEffect(externalFileUri) {
         if (externalFileUri != null && externalFileUri != handledExternalUri) {
             handledExternalUri = externalFileUri
@@ -52,7 +51,7 @@ fun LogLogApp(
                 onOpenFile = { uri ->
                     val encoded = Uri.encode(uri.toString())
                     navController.navigate(Screen.Viewer.createRoute(encoded)) {
-                        launchSingleTop = false   // izinkan buka banyak file berbeda
+                        launchSingleTop = false
                     }
                 },
                 onSettings = { navController.navigate(Screen.Settings.route) },
@@ -73,14 +72,16 @@ fun LogLogApp(
             ViewerScreen(
                 fileUri    = uri,
                 onBack     = { navController.popBackStack() },
-                onSettings = { navController.navigate(Screen.Settings.route) }
+                onSettings = { navController.navigate(Screen.Settings.route) },
+                onRequestPermission = onRequestPermission
             )
         }
 
         composable(Screen.Settings.route) {
             SettingsScreen(
-                themePrefs = themePrefs,
-                onBack     = { navController.popBackStack() }
+                themePrefs          = themePrefs,
+                onBack              = { navController.popBackStack() },
+                onRequestPermission = onRequestPermission
             )
         }
 
