@@ -25,9 +25,6 @@ class FileRepository(
         callerContext: android.content.Context? = null
     ) = withContext(Dispatchers.IO) {
         val ctx = callerContext ?: context
-        // Coba ambil persistent permission agar URI bisa dibuka ulang di sesi berikutnya.
-        // ACTION_OPEN_DOCUMENT: support persistable → berhasil.
-        // ACTION_VIEW dari file manager: TIDAK support persistable → SecurityException → isPersisted = false.
         val alreadyPersisted = ctx.contentResolver.persistedUriPermissions.any { perm ->
             perm.uri == uri && perm.isReadPermission
         }
@@ -65,40 +62,39 @@ class FileRepository(
 
     // ─── Baca konten file ───────────────────────────────────────────────────
     /**
-     * Membaca semua baris dari URI dengan penanganan error yang proper.
-     * Maksimum [maxLines] baris untuk mencegah OOM pada file sangat besar.
+     * Membaca semua baris dari URI.
      *
-     * [callerContext]: opsional — jika dipasok, digunakan untuk openInputStream().
-     * WAJIB diisi dengan Activity context saat URI berasal dari ACTION_VIEW,
-     * karena grant permission ACTION_VIEW hanya berlaku pada Activity yang menerima
-     * intent — bukan pada Application context yang dipakai ViewModel secara default.
-     * Tanpa ini, contentResolver.openInputStream() akan SecurityException meski URI valid.
-     *
-     * SecurityException di-propagate langsung (tidak di-retry dengan encoding lain)
-     * karena fallback encoding tidak akan membantu jika masalahnya permission.
+     * PENTING: Selalu gunakan callerContext (Activity context) untuk URI apapun,
+     * baik dari ACTION_VIEW maupun ACTION_OPEN_DOCUMENT (SAF).
+     * Application context tidak memiliki grant SAF URI permission dari sistem.
      */
     suspend fun readLines(
         uri: Uri,
         maxLines: Int = 30_000,
         callerContext: android.content.Context? = null
     ): Result<List<String>> = withContext(Dispatchers.IO) {
+        // Selalu pakai callerContext — jangan fallback ke application context
+        // karena SAF URI permission hanya dipegang oleh Activity/Process yang menerima intent
         val ctx = callerContext ?: context
 
-        // SecurityException harus langsung fail — jangan di-swallow oleh runCatching outer
-        // karena retry ISO-8859-1 tidak akan berhasil jika izin memang tidak ada.
+        // Test akses awal — tangkap SecurityException segera
         try {
-            ctx.contentResolver.openInputStream(uri)
+            ctx.contentResolver.openInputStream(uri)?.close()
         } catch (e: SecurityException) {
-            return@withContext Result.failure(e)
-        } ?: return@withContext Result.failure(
-            IllegalStateException("Tidak dapat membuka file. Pastikan file masih ada dan izin storage sudah diberikan.")
-        )
+            return@withContext Result.failure(
+                SecurityException("Izin akses file ditolak. Silakan buka file kembali melalui tombol \"Buka File\".")
+            )
+        } catch (e: Exception) {
+            return@withContext Result.failure(
+                IllegalStateException("Tidak dapat membuka file: ${e.message}")
+            )
+        }
 
         // Coba UTF-8 dulu (dengan auto-decompress jika GZIP)
         val result = runCatching {
             val raw = ctx.contentResolver.openInputStream(uri)
                 ?: return@runCatching Result.failure<List<String>>(
-                    IllegalStateException("Tidak dapat membuka file. Pastikan file masih ada dan izin storage sudah diberikan.")
+                    IllegalStateException("Stream null — file tidak dapat dibuka.")
                 )
             val stream = GzipUtil.wrapIfNeeded(raw)
             stream.bufferedReader(Charsets.UTF_8).use { reader ->
@@ -118,7 +114,7 @@ class FileRepository(
             Result.failure(e)
         }
 
-        // Kalau UTF-8 gagal (misal file binary/latin), fallback ke ISO-8859-1
+        // Fallback ISO-8859-1 jika UTF-8 decode gagal (file binary/latin)
         if (result.isFailure) {
             runCatching {
                 val raw2 = ctx.contentResolver.openInputStream(uri)
@@ -143,8 +139,7 @@ class FileRepository(
     }
 
     /**
-     * Cek apakah URI masih bisa diakses (persistent permission belum dicabut system).
-     * Digunakan HomeScreen sebelum membuka file dari riwayat.
+     * Cek apakah URI masih bisa diakses (persistent permission belum dicabut sistem).
      */
     fun isUriAccessible(uri: Uri): Boolean {
         return try {
@@ -155,28 +150,19 @@ class FileRepository(
 
     /**
      * Hapus entri riwayat yang URI-nya sudah tidak accessible.
-     * Hanya cek entry dengan isPersisted=true — entry non-persisted (ACTION_VIEW)
-     * memang tidak bisa diakses ulang dan itu expected behavior, bukan error.
      */
     suspend fun pruneInaccessibleRecents() = withContext(Dispatchers.IO) {
         val all = dao.getAll()
         all.forEach { file ->
             val uri = Uri.parse(file.path)
-            // Skip: file:// tidak butuh persistent permission
             if (uri.scheme != "content") return@forEach
-            // Skip: entry non-persisted sudah diketahui tidak bisa dibuka ulang
             if (!file.isPersisted) return@forEach
-            // Hapus hanya jika sebelumnya bisa (isPersisted=true) tapi sekarang tidak bisa
             if (!isUriAccessible(uri)) {
                 dao.deleteByPath(file.path)
             }
         }
     }
 
-    /**
-     * Info file dari ContentResolver.
-     * [ctx]: gunakan Activity context jika URI dari ACTION_VIEW.
-     */
     private fun queryFileInfo(uri: Uri, ctx: android.content.Context = context): FileInfo {
         var name = uri.lastPathSegment?.substringAfterLast('/') ?: "file.log"
         var size = 0L

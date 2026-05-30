@@ -12,8 +12,8 @@ import java.net.URL
 // ─── Model ───────────────────────────────────────────────────────────────────
 
 data class UpdateInfo(
-    val latestVersion : String,   // e.g. "1.2"
-    val tagName       : String,   // e.g. "v1.2"
+    val latestVersion : String,   // e.g. "1.5"
+    val tagName       : String,   // e.g. "v1.5"
     val changelog     : String,
     val downloadUrl   : String,
     val apkSizeBytes  : Long,
@@ -23,12 +23,12 @@ data class UpdateInfo(
 
 // GitHub API response shape (hanya field yang dipakai)
 private data class GhRelease(
-    @SerializedName("tag_name")     val tagName     : String   = "",
-    @SerializedName("name")         val name        : String   = "",
-    @SerializedName("body")         val body        : String   = "",
-    @SerializedName("published_at") val publishedAt : String   = "",
-    @SerializedName("prerelease")   val prerelease  : Boolean  = false,
-    @SerializedName("draft")        val draft       : Boolean  = false,
+    @SerializedName("tag_name")     val tagName     : String        = "",
+    @SerializedName("name")         val name        : String        = "",
+    @SerializedName("body")         val body        : String        = "",
+    @SerializedName("published_at") val publishedAt : String        = "",
+    @SerializedName("prerelease")   val prerelease  : Boolean       = false,
+    @SerializedName("draft")        val draft       : Boolean       = false,
     @SerializedName("assets")       val assets      : List<GhAsset> = emptyList()
 )
 
@@ -42,17 +42,19 @@ private data class GhAsset(
 
 object UpdateChecker {
 
-    private const val API_URL     = "https://api.github.com/repos/aetherdev01/aether-log/releases/latest"
-    private const val PREFS_NAME  = "loglog_update_cache"
-    private const val KEY_JSON    = "cached_release_json"
-    private const val KEY_TIME    = "cached_at_ms"
-    private const val CACHE_TTL   = 6 * 60 * 60 * 1000L  // 6 jam
+    private const val API_URL    = "https://api.github.com/repos/aetherdev01/aether-log/releases/latest"
+    private const val PREFS_NAME = "loglog_update_cache"
+    private const val KEY_JSON   = "cached_release_json"
+    private const val KEY_TIME   = "cached_at_ms"
+    private const val CACHE_TTL  = 6 * 60 * 60 * 1000L  // 6 jam
 
     private val gson = Gson()
 
     /**
      * Cek update. Pakai cache jika masih segar.
      * Return null jika jaringan gagal DAN tidak ada cache.
+     *
+     * [currentVersion]: versi app saat ini, bisa format "1.3", "v1.3", atau "1.3.0"
      */
     suspend fun check(context: Context, currentVersion: String): UpdateInfo? =
         withContext(Dispatchers.IO) {
@@ -62,7 +64,7 @@ object UpdateChecker {
         }
 
     private fun fetchRelease(prefs: SharedPreferences): GhRelease? {
-        val now     = System.currentTimeMillis()
+        val now      = System.currentTimeMillis()
         val cachedAt = prefs.getLong(KEY_TIME, 0)
 
         // Pakai cache jika masih dalam TTL
@@ -73,17 +75,21 @@ object UpdateChecker {
             }
         }
 
-        // Fetch dari API
+        // Fetch dari GitHub API
         return runCatching {
             val conn = URL(API_URL).openConnection() as HttpURLConnection
             conn.apply {
                 requestMethod  = "GET"
-                connectTimeout = 8_000
-                readTimeout    = 8_000
+                connectTimeout = 10_000
+                readTimeout    = 10_000
                 setRequestProperty("Accept", "application/vnd.github+json")
                 setRequestProperty("X-GitHub-Api-Version", "2022-11-28")
+                setRequestProperty("User-Agent", "LogLog-Android")
             }
-            if (conn.responseCode != 200) return@runCatching null
+            if (conn.responseCode != 200) {
+                conn.disconnect()
+                return@runCatching null
+            }
             val json = conn.inputStream.bufferedReader().readText()
             conn.disconnect()
 
@@ -99,13 +105,17 @@ object UpdateChecker {
 
     private fun parseRelease(release: GhRelease, currentVersion: String): UpdateInfo? {
         if (release.draft || release.prerelease) return null
+        if (release.tagName.isBlank()) return null
 
-        // Ambil APK asset
-        val apkAsset = release.assets.firstOrNull { it.name.endsWith(".apk") }
+        // Ambil APK asset — cari file .apk terbesar jika ada beberapa
+        val apkAsset = release.assets
+            .filter { it.name.endsWith(".apk", ignoreCase = true) }
+            .maxByOrNull { it.size }
             ?: return null
 
-        // Strip 'v' prefix untuk perbandingan versi
-        val latestVer = release.tagName.trimStart('v')
+        // Normalisasi versi: strip prefix 'v' / 'V', hapus whitespace
+        val latestVer  = normalizeVersion(release.tagName)
+        val currentVer = normalizeVersion(currentVersion)
 
         return UpdateInfo(
             latestVersion = latestVer,
@@ -114,13 +124,36 @@ object UpdateChecker {
             downloadUrl   = apkAsset.browserDownloadUrl,
             apkSizeBytes  = apkAsset.size,
             publishedAt   = release.publishedAt,
-            isNewVersion  = isNewer(latestVer, currentVersion)
+            isNewVersion  = isNewer(latestVer, currentVer)
         )
     }
 
-    /** Bandingkan versi semver sederhana: "1.2" > "1.1" */
+    /**
+     * Normalisasi string versi:
+     * "v1.5"  → "1.5"
+     * "V1.5"  → "1.5"
+     * "1.5"   → "1.5"
+     * "1.5.0" → "1.5.0"
+     * " v1.5 " → "1.5"
+     */
+    private fun normalizeVersion(version: String): String =
+        version.trim().trimStart('v', 'V')
+
+    /**
+     * Bandingkan dua versi semver sederhana.
+     * Mendukung format: "1.5", "1.5.0", "1.5.1"
+     *
+     * Contoh:
+     * isNewer("1.5", "1.3") → true
+     * isNewer("1.5", "1.5") → false
+     * isNewer("2.0", "1.9") → true
+     * isNewer("1.5.1", "1.5") → true
+     */
     private fun isNewer(latest: String, current: String): Boolean {
-        fun parts(v: String) = v.split(".").map { it.toIntOrNull() ?: 0 }
+        fun parts(v: String) = v.split(".").map { seg ->
+            // Ambil hanya angka leading dari setiap segment (handle "1rc2" → 1)
+            seg.takeWhile { it.isDigit() }.toIntOrNull() ?: 0
+        }
         val l = parts(latest)
         val c = parts(current)
         val len = maxOf(l.size, c.size)
@@ -133,7 +166,7 @@ object UpdateChecker {
         return false
     }
 
-    /** Force clear cache — buat manual refresh */
+    /** Force clear cache — untuk manual refresh */
     fun clearCache(context: Context) {
         context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
             .edit().clear().apply()

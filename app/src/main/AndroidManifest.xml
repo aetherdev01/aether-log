@@ -9,11 +9,16 @@
         android:maxSdkVersion="32" />
 
     <!-- Android 13+ (API 33+): READ_MEDIA granular per tipe -->
-    <!-- Untuk file log/txt/json/xml tidak ada kategori spesifik di READ_MEDIA_*,
-         jadi kita declare READ_MEDIA_IMAGES sebagai fallback "non-media" file picker -->
+    <!-- READ_MEDIA_IMAGES: fallback untuk SAF pada Android 13+ -->
     <uses-permission
         android:name="android.permission.READ_MEDIA_IMAGES"
         android:minSdkVersion="33" />
+    <!-- READ_MEDIA_DOCUMENTS (API 33+): akses dokumen/file non-media via SAF.
+         Ini yang dibutuhkan untuk file .log .txt .json .xml melalui file picker -->
+    <uses-permission
+        android:name="android.permission.READ_MEDIA_DOCUMENTS"
+        android:minSdkVersion="33"
+        tools:ignore="ProtectedPermissions" />
 
     <!-- Android 11+ (API 30+): akses semua file — optional, muncul di Settings > Special App Access
          Dibutuhkan jika user buka file via path langsung (bukan SAF picker) -->

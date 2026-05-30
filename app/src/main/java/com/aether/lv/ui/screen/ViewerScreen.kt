@@ -250,9 +250,11 @@ fun ViewerScreen(
                 }
                 state.error != null -> {
                     ErrorState(
-                        message = state.error!!,
+                        message             = state.error!!,
+                        errorType           = state.errorType,
                         onRequestPermission = onRequestPermission,
-                        modifier = Modifier.align(Alignment.Center)
+                        onRetry             = { vm.retryLoad(callerContext = context) },
+                        modifier            = Modifier.align(Alignment.Center)
                     )
                 }
                 state.filteredLines.isEmpty() && state.searchQuery.isNotBlank() -> {
@@ -446,49 +448,71 @@ private fun LogLine(
 @Composable
 private fun ErrorState(
     message             : String,
+    errorType           : FileErrorType? = null,
     onRequestPermission : () -> Unit = {},
+    onRetry             : () -> Unit = {},
     modifier            : Modifier = Modifier
 ) {
-    // Deteksi apakah error disebabkan permission / URI kedaluwarsa
-    val isPermissionError = message.contains("permission", ignoreCase = true) ||
-        message.contains("izin", ignoreCase = true) ||
-        message.contains("denied", ignoreCase = true) ||
-        message.contains("SecurityException", ignoreCase = true) ||
-        message.contains("tidak dapat membuka", ignoreCase = true) ||
-        message.contains("dicabut", ignoreCase = true) ||
-        message.contains("kedaluwarsa", ignoreCase = true)
+    val isPermissionError = errorType == FileErrorType.PERMISSION
 
     Column(
         modifier            = modifier.padding(24.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         Icon(
-            Icons.Outlined.ErrorOutline, null,
+            if (isPermissionError) Icons.Outlined.LockOpen else Icons.Outlined.ErrorOutline,
+            null,
             modifier = Modifier.size(48.dp),
-            tint     = MaterialTheme.colorScheme.error
+            tint     = if (isPermissionError)
+                MaterialTheme.colorScheme.primary
+            else
+                MaterialTheme.colorScheme.error
         )
         Spacer(Modifier.height(12.dp))
         Text(
-            "Gagal Membaca File",
+            if (isPermissionError) "Izin Akses Diperlukan" else "Gagal Membaca File",
             style = MaterialTheme.typography.titleMedium,
-            color = MaterialTheme.colorScheme.error
+            color = if (isPermissionError)
+                MaterialTheme.colorScheme.primary
+            else
+                MaterialTheme.colorScheme.error
         )
         Spacer(Modifier.height(6.dp))
         Text(
             message,
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
+            style     = MaterialTheme.typography.bodySmall,
+            color     = MaterialTheme.colorScheme.onSurfaceVariant,
+            textAlign = androidx.compose.ui.text.style.TextAlign.Center
         )
+        Spacer(Modifier.height(16.dp))
         if (isPermissionError) {
-            Spacer(Modifier.height(16.dp))
-            // Tombol utama: minta izin storage
-            OutlinedButton(onClick = onRequestPermission) {
+            // Tombol izin storage
+            Button(onClick = onRequestPermission) {
                 Icon(
                     Icons.Outlined.LockOpen, null,
                     modifier = Modifier.size(16.dp)
                 )
                 Spacer(Modifier.width(6.dp))
                 Text("Izinkan Akses Storage")
+            }
+            Spacer(Modifier.height(8.dp))
+            // Tombol retry setelah izin diberikan
+            OutlinedButton(onClick = onRetry) {
+                Icon(
+                    Icons.Outlined.Refresh, null,
+                    modifier = Modifier.size(16.dp)
+                )
+                Spacer(Modifier.width(6.dp))
+                Text("Coba Lagi")
+            }
+        } else {
+            OutlinedButton(onClick = onRetry) {
+                Icon(
+                    Icons.Outlined.Refresh, null,
+                    modifier = Modifier.size(16.dp)
+                )
+                Spacer(Modifier.width(6.dp))
+                Text("Coba Lagi")
             }
         }
     }

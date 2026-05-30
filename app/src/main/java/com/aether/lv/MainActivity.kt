@@ -13,6 +13,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
+import androidx.core.content.ContextCompat
 import com.aether.lv.data.preferences.ThemePreferences
 import com.aether.lv.permission.PermissionManager
 import com.aether.lv.permission.PermissionRationaleDialog
@@ -118,30 +119,40 @@ class MainActivity : ComponentActivity() {
 
     /**
      * Request storage permission sesuai API level.
-     * [force] = true untuk trigger dari UI (misal tombol di Settings).
+     *
+     * Flow yang benar:
+     * 1. SAF (ACTION_OPEN_DOCUMENT) tidak butuh runtime permission — sistem yang handle.
+     * 2. Untuk Android 13+: READ_MEDIA_IMAGES di-request untuk non-SAF flow.
+     * 3. Untuk Android 11-12: READ_EXTERNAL_STORAGE.
+     * 4. MANAGE_EXTERNAL_STORAGE hanya ditampilkan via tombol di Settings, bukan auto-prompt.
+     *
+     * [force] = true → dipanggil dari tombol "Izinkan Akses Storage" di ErrorState.
      */
     fun requestStoragePermissionIfNeeded(force: Boolean = false) {
-        if (PermissionManager.hasStoragePermission(this) && !force) return
+        // Jika sudah punya MANAGE_EXTERNAL_STORAGE (full access), tidak perlu apa-apa
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R &&
+            android.os.Environment.isExternalStorageManager()) return
 
         val perms = PermissionManager.requiredPermissions()
 
-        // Cek apakah perlu show rationale (user sudah pernah deny sebelumnya)
+        // Cek apakah runtime permission sudah granted
+        val allGranted = perms.all { perm ->
+            androidx.core.content.ContextCompat.checkSelfPermission(this, perm) ==
+                android.content.pm.PackageManager.PERMISSION_GRANTED
+        }
+        if (allGranted && !force) return
+
         val shouldShowRationale = perms.any { perm ->
             shouldShowRequestPermissionRationale(perm)
         }
 
         when {
-            // Android 11+: MANAGE_EXTERNAL_STORAGE tidak bisa di-request via dialog biasa
-            Build.VERSION.SDK_INT >= Build.VERSION_CODES.R &&
-            !android.os.Environment.isExternalStorageManager() &&
-            force -> {
-                showManageStorageDialog = true
-            }
-            // User sebelumnya deny → show rationale dulu
-            shouldShowRationale -> {
+            // Kalau force (dari tombol UI) dan sudah pernah deny berkali-kali
+            // → arahkan ke App Settings, bukan MANAGE_EXTERNAL_STORAGE
+            force && shouldShowRationale -> {
                 showPermissionDialog = true
             }
-            // Langsung request (pertama kali atau force tanpa rationale)
+            // Pertama kali atau force tanpa rationale → langsung request
             else -> {
                 requestPermissionLauncher.launch(perms.toTypedArray())
             }
