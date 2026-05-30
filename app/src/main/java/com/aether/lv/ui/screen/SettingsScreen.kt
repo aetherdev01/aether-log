@@ -11,7 +11,6 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.aether.lv.data.preferences.ThemePreferences
 import kotlinx.coroutines.launch
 
@@ -21,11 +20,12 @@ fun SettingsScreen(
     themePrefs : ThemePreferences,
     onBack     : () -> Unit
 ) {
-    val isDark     by themePrefs.isDarkMode.collectAsStateWithLifecycle(false)
-    val isDynamic  by themePrefs.isDynamicColor.collectAsStateWithLifecycle(true)
-    val wrapLines  by themePrefs.isWrapLines.collectAsStateWithLifecycle(false)
-    val showNums   by themePrefs.showLineNumbers.collectAsStateWithLifecycle(true)
-    val showColors by themePrefs.showLogColors.collectAsStateWithLifecycle(true)
+    // Gunakan collectAsState dengan initialValue eksplisit agar tidak crash
+    val isDark     by themePrefs.isDarkMode.collectAsState(initial = false)
+    val isDynamic  by themePrefs.isDynamicColor.collectAsState(initial = true)
+    val wrapLines  by themePrefs.isWrapLines.collectAsState(initial = false)
+    val showNums   by themePrefs.showLineNumbers.collectAsState(initial = true)
+    val showColors by themePrefs.showLogColors.collectAsState(initial = true)
 
     val scope = rememberCoroutineScope()
 
@@ -121,11 +121,26 @@ fun SettingsScreen(
             }
 
             item {
-                SettingInfoRow(label = "Versi",          value = "1.1")
-                SettingInfoRow(label = "Paket",          value = "com.aether.lv")
-                SettingInfoRow(label = "Min Android",    value = "Android 11 (API 30)")
-                SettingInfoRow(label = "Target Android", value = "Android 16 (API 36)")
-                SettingInfoRow(label = "Maintainer",     value = "@AetherDev22")
+                Card(
+                    shape  = RoundedCornerShape(16.dp),
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                    ),
+                    elevation = CardDefaults.cardElevation(0.dp)
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 12.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        SettingInfoRow(label = "Versi",          value = "1.1")
+                        SettingInfoRow(label = "Paket",          value = "com.aether.lv")
+                        SettingInfoRow(label = "Min Android",    value = "Android 11 (API 30)")
+                        SettingInfoRow(label = "Target Android", value = "Android 16 (API 36)")
+                        SettingInfoRow(label = "Maintainer",     value = "@AetherDev22")
+                    }
+                }
             }
         }
     }
@@ -154,7 +169,8 @@ private fun SettingSwitch(
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
         ),
-        elevation = CardDefaults.cardElevation(0.dp)
+        elevation = CardDefaults.cardElevation(0.dp),
+        onClick = { onCheckedChange(!checked) }   // seluruh card bisa diklik
     ) {
         Row(
             modifier = Modifier
@@ -169,7 +185,10 @@ private fun SettingSwitch(
                 Text(subtitle, style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
-            Switch(checked = checked, onCheckedChange = onCheckedChange)
+            Switch(
+                checked         = checked,
+                onCheckedChange = onCheckedChange
+            )
         }
     }
 }
@@ -177,9 +196,7 @@ private fun SettingSwitch(
 @Composable
 private fun SettingInfoRow(label: String, value: String) {
     Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 4.dp, horizontal = 4.dp),
+        modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.SpaceBetween
     ) {
         Text(label, style = MaterialTheme.typography.bodyMedium,

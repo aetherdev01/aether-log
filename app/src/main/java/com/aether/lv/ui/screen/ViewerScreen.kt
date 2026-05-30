@@ -5,6 +5,7 @@ import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import android.provider.OpenableColumns
 import androidx.compose.animation.*
 import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
@@ -48,9 +49,16 @@ fun ViewerScreen(
     var searchExpanded by remember { mutableStateOf(false) }
     var showOptionsMenu by remember { mutableStateOf(false) }
 
-    // Resolve nama file dari URI
+    // Resolve nama file yang proper dari ContentResolver
     val fileName = remember(fileUri) {
-        fileUri?.lastPathSegment?.substringAfterLast('/') ?: "file.log"
+        if (fileUri == null) return@remember "file.log"
+        try {
+            context.contentResolver.query(fileUri, null, null, null, null)?.use { cursor ->
+                val idx = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+                if (idx >= 0 && cursor.moveToFirst()) cursor.getString(idx) else null
+            }
+        } catch (_: Exception) { null }
+            ?: fileUri.lastPathSegment?.substringAfterLast('/') ?: "file.log"
     }
 
     // Load saat compose pertama kali
@@ -224,12 +232,23 @@ fun ViewerScreen(
         ) {
             when {
                 state.isLoading -> {
-                    CircularProgressIndicator(modifier = Modifier.align(Alignment.Center))
+                    Column(
+                        modifier = Modifier.align(Alignment.Center),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        CircularProgressIndicator()
+                        Text(
+                            "Membaca file…",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
                 }
                 state.error != null -> {
                     ErrorState(message = state.error!!, modifier = Modifier.align(Alignment.Center))
                 }
-                state.filteredLines.isEmpty() -> {
+                state.filteredLines.isEmpty() && state.searchQuery.isNotBlank() -> {
                     Text(
                         "Tidak ada baris yang cocok dengan \"${state.searchQuery}\"",
                         modifier = Modifier
@@ -239,10 +258,18 @@ fun ViewerScreen(
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
+                state.filteredLines.isEmpty() -> {
+                    Text(
+                        "File kosong",
+                        modifier = Modifier.align(Alignment.Center),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
                 else -> {
                     LogContent(
-                        lines       = state.filteredLines,
-                        wrapLines   = state.wrapLines,
+                        lines        = state.filteredLines,
+                        wrapLines    = state.wrapLines,
                         showLineNums = state.showLineNums,
                         searchQuery  = state.searchQuery,
                         listState    = listState
@@ -250,7 +277,7 @@ fun ViewerScreen(
                 }
             }
 
-            // FAB scroll to end
+            // FAB scroll to end — tampil hanya saat ada banyak baris dan bukan loading
             if (!state.isLoading && state.filteredLines.size > 50) {
                 SmallFloatingActionButton(
                     onClick   = { vm.jumpToEnd() },
@@ -306,7 +333,10 @@ private fun LogContent(
                 modifier       = modifier.fillMaxSize(),
                 contentPadding = PaddingValues(vertical = 4.dp)
             ) {
-                itemsIndexed(lines) { index, pl ->
+                itemsIndexed(
+                    items = lines,
+                    key   = { index, _ -> index }
+                ) { index, pl ->
                     LogLine(
                         lineNumber  = index + 1,
                         parsed      = pl,
@@ -326,7 +356,10 @@ private fun LogContent(
                     .horizontalScroll(hScroll),
                 contentPadding = PaddingValues(vertical = 4.dp)
             ) {
-                itemsIndexed(lines) { index, pl ->
+                itemsIndexed(
+                    items = lines,
+                    key   = { index, _ -> index }
+                ) { index, pl ->
                     LogLine(
                         lineNumber  = index + 1,
                         parsed      = pl,
@@ -366,27 +399,30 @@ private fun LogLine(
             )
         }
 
-        val annotated = buildAnnotatedString {
-            if (searchQuery.isNotBlank()) {
-                val raw   = parsed.raw
-                var start = 0
-                val lower = raw.lowercase()
-                val qLow  = searchQuery.lowercase()
-                while (true) {
-                    val idx = lower.indexOf(qLow, start)
-                    if (idx < 0) {
-                        withStyle(SpanStyle(color = parsed.color)) { append(raw.substring(start)) }
-                        break
+        val annotated = remember(parsed.raw, parsed.color, searchQuery) {
+            buildAnnotatedString {
+                if (searchQuery.isNotBlank()) {
+                    val raw   = parsed.raw
+                    var start = 0
+                    val lower = raw.lowercase()
+                    val qLow  = searchQuery.lowercase()
+                    while (true) {
+                        val idx = lower.indexOf(qLow, start)
+                        if (idx < 0) {
+                            withStyle(SpanStyle(color = parsed.color)) { append(raw.substring(start)) }
+                            break
+                        }
+                        withStyle(SpanStyle(color = parsed.color)) { append(raw.substring(start, idx)) }
+                        // Note: background color harus di-hardcode karena remember tidak bisa akses MaterialTheme
+                        withStyle(SpanStyle(
+                            background = androidx.compose.ui.graphics.Color(0x4D6200EE),
+                            color      = parsed.color
+                        )) { append(raw.substring(idx, idx + searchQuery.length)) }
+                        start = idx + searchQuery.length
                     }
-                    withStyle(SpanStyle(color = parsed.color)) { append(raw.substring(start, idx)) }
-                    withStyle(SpanStyle(
-                        background = MaterialTheme.colorScheme.primary.copy(alpha = 0.3f),
-                        color      = MaterialTheme.colorScheme.onSurface
-                    )) { append(raw.substring(idx, idx + searchQuery.length)) }
-                    start = idx + searchQuery.length
+                } else {
+                    withStyle(SpanStyle(color = parsed.color)) { append(parsed.raw) }
                 }
-            } else {
-                withStyle(SpanStyle(color = parsed.color)) { append(parsed.raw) }
             }
         }
 

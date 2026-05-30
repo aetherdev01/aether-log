@@ -52,7 +52,7 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                 Triple(wrap, nums, colors)
             }.collect { (wrap, nums, colors) ->
                 _state.update { s ->
-                    // Jika warna berubah, re-parse
+                    // Re-parse bila setting warna berubah dan ada baris yang sudah di-load
                     val newLines = if (s.lines.isNotEmpty() && colors != s.applyColors) {
                         s.lines.map { LogLineParser.parse(it.raw, applyColors = colors) }
                     } else {
@@ -75,8 +75,8 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
             _state.update { it.copy(isLoading = false, error = "File tidak ditemukan") }
             return
         }
-        // Hindari reload saat recompose
-        if (uri == loadedUri) return
+        // Hindari reload saat recompose — tapi izinkan reload jika ada error sebelumnya
+        if (uri == loadedUri && _state.value.error == null && !_state.value.isLoading) return
         loadedUri = uri
 
         viewModelScope.launch {
@@ -98,6 +98,8 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                 repo.saveRecent(uri, lineCount = rawLines.size)
             }.onFailure { e ->
                 _state.update { it.copy(isLoading = false, error = e.message ?: "Gagal membaca file") }
+                // Reset loadedUri agar bisa di-retry
+                loadedUri = null
             }
         }
     }

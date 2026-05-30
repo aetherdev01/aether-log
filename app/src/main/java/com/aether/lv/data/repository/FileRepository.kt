@@ -20,12 +20,12 @@ class FileRepository(
     suspend fun saveRecent(uri: Uri, lineCount: Int = 0) = withContext(Dispatchers.IO) {
         val info = queryFileInfo(uri)
         val ext  = FileTypeUtil.extensionOf(info.name)
-        if (!FileTypeUtil.isAllowed(ext)) return@withContext
+        // Simpan semua tipe file yang berhasil dibuka, bukan hanya yang ada di ALLOWED list
         dao.upsert(
             RecentFile(
                 path         = uri.toString(),
                 displayName  = info.name,
-                fileType     = ext,
+                fileType     = ext.ifBlank { "log" },
                 sizeBytes    = info.size,
                 lastOpenedAt = System.currentTimeMillis(),
                 lineCount    = lineCount
@@ -43,16 +43,16 @@ class FileRepository(
      */
     suspend fun readLines(
         uri: Uri,
-        maxLines: Int = 20_000
+        maxLines: Int = 30_000
     ): Result<List<String>> = withContext(Dispatchers.IO) {
-        runCatching {
+        // Coba UTF-8 dulu
+        val result = runCatching {
             val stream = context.contentResolver.openInputStream(uri)
-                ?: return@runCatching listOf<String>().also {
-                    error("Tidak dapat membuka file. Pastikan file masih ada dan izin storage sudah diberikan.")
-                }
-
+                ?: return@runCatching Result.failure<List<String>>(
+                    IllegalStateException("Tidak dapat membuka file. Pastikan file masih ada dan izin storage sudah diberikan.")
+                )
             stream.bufferedReader(Charsets.UTF_8).use { reader ->
-                val lines = ArrayList<String>(minOf(maxLines, 1024))
+                val lines = ArrayList<String>(minOf(maxLines, 2048))
                 var count = 0
                 reader.forEachLine { line ->
                     if (count < maxLines) lines.add(line)
@@ -61,21 +61,29 @@ class FileRepository(
                 if (count > maxLines) {
                     lines.add("── [${count - maxLines} baris lebih dipotong] ──")
                 }
-                lines
+                Result.success(lines)
             }
-        }.recoverCatching { e ->
-            // Coba fallback dengan charset lain jika UTF-8 gagal
-            val stream2 = context.contentResolver.openInputStream(uri)
-                ?: error("Tidak dapat membuka file.")
-            stream2.bufferedReader(Charsets.ISO_8859_1).use { reader ->
-                val lines = ArrayList<String>(minOf(maxLines, 1024))
-                var count = 0
-                reader.forEachLine { line ->
-                    if (count < maxLines) lines.add(line)
-                    count++
+        }.getOrElse { e ->
+            Result.failure(e)
+        }
+
+        // Kalau UTF-8 gagal (misal file binary/latin), fallback ke ISO-8859-1
+        if (result.isFailure) {
+            runCatching {
+                val stream2 = context.contentResolver.openInputStream(uri)
+                    ?: return@runCatching Result.failure(IllegalStateException("Tidak dapat membuka file."))
+                stream2.bufferedReader(Charsets.ISO_8859_1).use { reader ->
+                    val lines = ArrayList<String>(minOf(maxLines, 2048))
+                    var count = 0
+                    reader.forEachLine { line ->
+                        if (count < maxLines) lines.add(line)
+                        count++
+                    }
+                    Result.success(lines)
                 }
-                lines
-            }
+            }.getOrElse { e -> Result.failure(e) }
+        } else {
+            result
         }
     }
 

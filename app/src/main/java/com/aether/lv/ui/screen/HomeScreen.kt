@@ -40,7 +40,7 @@ fun HomeScreen(
     val updateState  by vm.updateVm.state.collectAsStateWithLifecycle()
     var showClearDialog by remember { mutableStateOf(false) }
 
-    // File picker
+    // File picker — izinkan semua tipe file agar user bisa pilih file apapun
     val filePicker = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocument()
     ) { uri: Uri? -> uri?.let { onOpenFile(it) } }
@@ -70,13 +70,11 @@ fun HomeScreen(
                     }
                 },
                 actions = {
-                    // Badge update di icon bila ada versi baru
+                    // Badge update bila ada versi baru
                     if (updateState.updateInfo?.isNewVersion == true) {
                         BadgedBox(
                             badge = {
-                                Badge(
-                                    containerColor = MaterialTheme.colorScheme.error
-                                )
+                                Badge(containerColor = MaterialTheme.colorScheme.error)
                             }
                         ) {
                             IconButton(onClick = { vm.updateVm.showUpdateDialog() }) {
@@ -99,10 +97,8 @@ fun HomeScreen(
         floatingActionButton = {
             ExtendedFloatingActionButton(
                 onClick = {
-                    filePicker.launch(arrayOf(
-                        "text/plain", "application/json", "text/xml",
-                        "application/xml", "text/x-log", "*/*"
-                    ))
+                    // Gunakan */* agar semua file bisa dipilih, tidak hanya yang punya MIME terdaftar
+                    filePicker.launch(arrayOf("*/*"))
                 },
                 icon = { Icon(Icons.Rounded.FolderOpen, "Buka File") },
                 text = { Text("Buka File") }
@@ -115,7 +111,7 @@ fun HomeScreen(
                     .fillMaxSize()
                     .padding(innerPadding),
                 onPickFile = {
-                    filePicker.launch(arrayOf("text/plain","application/json","text/xml","application/xml","*/*"))
+                    filePicker.launch(arrayOf("*/*"))
                 }
             )
         } else {
@@ -191,15 +187,13 @@ private fun RecentFileCard(
     val ext = file.fileType
 
     Card(
-        modifier  = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(16.dp))
-            .clickable { onClick() },
+        modifier  = Modifier.fillMaxWidth(),
         shape     = RoundedCornerShape(16.dp),
         colors    = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
         ),
-        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+        onClick   = onClick
     ) {
         Row(
             modifier = Modifier

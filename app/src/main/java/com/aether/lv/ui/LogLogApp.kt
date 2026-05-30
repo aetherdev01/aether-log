@@ -29,9 +29,13 @@ fun LogLogApp(
 ) {
     val navController = rememberNavController()
 
+    // Track uri yang sudah dihandle agar tidak navigate ulang saat recompose
+    var handledExternalUri by remember { mutableStateOf<Uri?>(null) }
+
     // Navigasi ke viewer bila ada file eksternal saat launch
     LaunchedEffect(externalFileUri) {
-        if (externalFileUri != null) {
+        if (externalFileUri != null && externalFileUri != handledExternalUri) {
+            handledExternalUri = externalFileUri
             val encoded = Uri.encode(externalFileUri.toString())
             navController.navigate(Screen.Viewer.createRoute(encoded)) {
                 launchSingleTop = true
@@ -47,7 +51,9 @@ fun LogLogApp(
             HomeScreen(
                 onOpenFile = { uri ->
                     val encoded = Uri.encode(uri.toString())
-                    navController.navigate(Screen.Viewer.createRoute(encoded))
+                    navController.navigate(Screen.Viewer.createRoute(encoded)) {
+                        launchSingleTop = false   // izinkan buka banyak file berbeda
+                    }
                 },
                 onSettings = { navController.navigate(Screen.Settings.route) },
                 onAbout    = { navController.navigate(Screen.About.route) }
