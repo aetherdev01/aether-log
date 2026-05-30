@@ -1,5 +1,11 @@
 @file:Suppress("UnstableApiUsage")
 import com.android.build.gradle.internal.api.BaseVariantOutputImpl
+import java.util.Properties
+
+val localProps = Properties().also { props ->
+    rootProject.file("local.properties").takeIf { it.exists() }
+        ?.inputStream()?.use { props.load(it) }
+}
 
 plugins {
     alias(libs.plugins.android.application)
@@ -23,14 +29,10 @@ android {
 
     signingConfigs {
         create("release") {
-            val ks   = rootProject.file("loglog.jks")
-            val isCI = System.getenv("CI") == "true"
-            if (ks.exists() && !isCI) {
-                storeFile     = ks
-                storePassword = System.getenv("STORE_PASSWORD") ?: ""
-                keyAlias      = System.getenv("KEY_ALIAS")      ?: ""
-                keyPassword   = System.getenv("KEY_PASSWORD")   ?: ""
-            }
+            storeFile     = localProps["STORE_FILE"]?.toString()?.let { rootProject.file(it) }
+            storePassword = localProps["STORE_PASSWORD"]?.toString() ?: ""
+            keyAlias      = localProps["KEY_ALIAS"]?.toString()      ?: ""
+            keyPassword   = localProps["KEY_PASSWORD"]?.toString()   ?: ""
         }
     }
 
@@ -38,8 +40,7 @@ android {
         release {
             isMinifyEnabled   = true
             isShrinkResources = true
-            val isCI = System.getenv("CI") == "true"
-            signingConfig = if (isCI) null else signingConfigs.getByName("release")
+            signingConfig = signingConfigs.getByName("release")
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"

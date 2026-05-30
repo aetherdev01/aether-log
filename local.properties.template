@@ -1,0 +1,7 @@
+## Signing config — salin file ini jadi "local.properties" di root project
+## JANGAN commit local.properties ke git!
+
+STORE_FILE=log.jks
+STORE_PASSWORD=aether
+KEY_ALIAS=aether
+KEY_PASSWORD=aether
