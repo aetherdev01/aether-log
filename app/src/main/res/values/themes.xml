@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Base M3 theme -->
+    <style name="Theme.LogLog" parent="Theme.Material3.DayNight.NoActionBar" />
+
+    <!-- Splash screen theme -->
+    <style name="Theme.LogLog.SplashScreen" parent="Theme.LogLog">
+        <item name="android:windowSplashScreenBackground">#FF4A5FBF</item>
+        <item name="android:windowSplashScreenAnimatedIcon">@mipmap/ic_launcher_foreground</item>
+        <item name="postSplashScreenTheme">@style/Theme.LogLog</item>
+    </style>
+</resources>

@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">LogLog</string>
+    <string name="app_description">Log Viewer for Android</string>
+
+    <!-- File picker -->
+    <string name="open_file">Buka File</string>
+    <string name="pick_file">Pilih File</string>
+    <string name="no_history">Belum Ada Riwayat</string>
+    <string name="no_history_desc">Buka file log, txt, json, xml, yaml, err, atau out</string>
+
+    <!-- Viewer -->
+    <string name="search_hint">Cari dalam log…</string>
+    <string name="lines_count">%1$d baris</string>
+    <string name="filtered_lines">%1$d / %2$d baris</string>
+    <string name="jump_to_end">Ke Baris Terakhir</string>
+    <string name="jump_to_start">Ke Baris Pertama</string>
+    <string name="copy_all">Salin Semua Teks</string>
+    <string name="share_file">Bagikan File Log</string>
+
+    <!-- Settings -->
+    <string name="settings">Pengaturan</string>
+    <string name="dark_mode">Mode Gelap</string>
+    <string name="dark_mode_desc">Gunakan tema gelap</string>
+    <string name="dynamic_color">Material You</string>
+    <string name="dynamic_color_desc">Warna dinamis dari wallpaper (Android 12+)</string>
+    <string name="wrap_lines">Bungkus Baris (Word Wrap)</string>
+    <string name="show_line_numbers">Nomor Baris</string>
+    <string name="show_log_colors">Warna Level Log</string>
+
+    <!-- About -->
+    <string name="about">Tentang</string>
+    <string name="version">Versi</string>
+    <string name="maintainer">Maintainer</string>
+    <string name="telegram">Telegram</string>
+    <string name="github">GitHub</string>
+</resources>
