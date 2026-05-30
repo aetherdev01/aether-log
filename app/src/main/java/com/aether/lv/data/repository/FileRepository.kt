@@ -19,28 +19,33 @@ class FileRepository(
     // ─── Riwayat ────────────────────────────────────────────────────────────
     val recentFiles: Flow<List<RecentFile>> = dao.getAllFlow()
 
-    suspend fun saveRecent(uri: Uri, lineCount: Int = 0) = withContext(Dispatchers.IO) {
+    suspend fun saveRecent(
+        uri: Uri,
+        lineCount: Int = 0,
+        callerContext: android.content.Context? = null
+    ) = withContext(Dispatchers.IO) {
+        val ctx = callerContext ?: context
         // Coba ambil persistent permission agar URI bisa dibuka ulang di sesi berikutnya.
-        // ACTION_OPEN_DOCUMENT: support persistable → takePersistableUriPermission berhasil.
+        // ACTION_OPEN_DOCUMENT: support persistable → berhasil.
         // ACTION_VIEW dari file manager: TIDAK support persistable → SecurityException → isPersisted = false.
-        val alreadyPersisted = context.contentResolver.persistedUriPermissions.any { perm ->
+        val alreadyPersisted = ctx.contentResolver.persistedUriPermissions.any { perm ->
             perm.uri == uri && perm.isReadPermission
         }
         val isPersisted = if (alreadyPersisted) {
-            true // Sudah ada — tidak perlu take lagi
+            true
         } else {
             try {
-                context.contentResolver.takePersistableUriPermission(
+                ctx.contentResolver.takePersistableUriPermission(
                     uri,
                     Intent.FLAG_GRANT_READ_URI_PERMISSION
                 )
-                true // Berhasil → URI bisa dibuka ulang dari riwayat
+                true
             } catch (_: SecurityException) {
-                false // Gagal → URI dari ACTION_VIEW/share, hanya valid di session ini
+                false
             }
         }
 
-        val info = queryFileInfo(uri)
+        val info = queryFileInfo(uri, ctx)
         val ext  = FileTypeUtil.extensionOf(info.name)
         dao.upsert(
             RecentFile(
@@ -63,17 +68,26 @@ class FileRepository(
      * Membaca semua baris dari URI dengan penanganan error yang proper.
      * Maksimum [maxLines] baris untuk mencegah OOM pada file sangat besar.
      *
+     * [callerContext]: opsional — jika dipasok, digunakan untuk openInputStream().
+     * WAJIB diisi dengan Activity context saat URI berasal dari ACTION_VIEW,
+     * karena grant permission ACTION_VIEW hanya berlaku pada Activity yang menerima
+     * intent — bukan pada Application context yang dipakai ViewModel secara default.
+     * Tanpa ini, contentResolver.openInputStream() akan SecurityException meski URI valid.
+     *
      * SecurityException di-propagate langsung (tidak di-retry dengan encoding lain)
      * karena fallback encoding tidak akan membantu jika masalahnya permission.
      */
     suspend fun readLines(
         uri: Uri,
-        maxLines: Int = 30_000
+        maxLines: Int = 30_000,
+        callerContext: android.content.Context? = null
     ): Result<List<String>> = withContext(Dispatchers.IO) {
+        val ctx = callerContext ?: context
+
         // SecurityException harus langsung fail — jangan di-swallow oleh runCatching outer
         // karena retry ISO-8859-1 tidak akan berhasil jika izin memang tidak ada.
         try {
-            context.contentResolver.openInputStream(uri)
+            ctx.contentResolver.openInputStream(uri)
         } catch (e: SecurityException) {
             return@withContext Result.failure(e)
         } ?: return@withContext Result.failure(
@@ -82,11 +96,10 @@ class FileRepository(
 
         // Coba UTF-8 dulu (dengan auto-decompress jika GZIP)
         val result = runCatching {
-            val raw = context.contentResolver.openInputStream(uri)
+            val raw = ctx.contentResolver.openInputStream(uri)
                 ?: return@runCatching Result.failure<List<String>>(
                     IllegalStateException("Tidak dapat membuka file. Pastikan file masih ada dan izin storage sudah diberikan.")
                 )
-            // Wrap dengan GZIPInputStream secara otomatis jika magic bytes cocok
             val stream = GzipUtil.wrapIfNeeded(raw)
             stream.bufferedReader(Charsets.UTF_8).use { reader ->
                 val lines = ArrayList<String>(minOf(maxLines, 2048))
@@ -101,16 +114,14 @@ class FileRepository(
                 Result.success(lines)
             }
         }.getOrElse { e ->
-            // Jangan swallow SecurityException — propagate langsung
             if (e is SecurityException) return@withContext Result.failure(e)
             Result.failure(e)
         }
 
         // Kalau UTF-8 gagal (misal file binary/latin), fallback ke ISO-8859-1
-        // Tetap pakai GzipUtil.wrapIfNeeded agar .gz latin juga ter-handle
         if (result.isFailure) {
             runCatching {
-                val raw2 = context.contentResolver.openInputStream(uri)
+                val raw2 = ctx.contentResolver.openInputStream(uri)
                     ?: return@runCatching Result.failure(IllegalStateException("Tidak dapat membuka file."))
                 val stream2 = GzipUtil.wrapIfNeeded(raw2)
                 stream2.bufferedReader(Charsets.ISO_8859_1).use { reader ->
@@ -164,12 +175,13 @@ class FileRepository(
 
     /**
      * Info file dari ContentResolver.
+     * [ctx]: gunakan Activity context jika URI dari ACTION_VIEW.
      */
-    private fun queryFileInfo(uri: Uri): FileInfo {
+    private fun queryFileInfo(uri: Uri, ctx: android.content.Context = context): FileInfo {
         var name = uri.lastPathSegment?.substringAfterLast('/') ?: "file.log"
         var size = 0L
         try {
-            context.contentResolver.query(uri, null, null, null, null)?.use { cursor ->
+            ctx.contentResolver.query(uri, null, null, null, null)?.use { cursor ->
                 val nameIdx = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
                 val sizeIdx = cursor.getColumnIndex(OpenableColumns.SIZE)
                 if (cursor.moveToFirst()) {

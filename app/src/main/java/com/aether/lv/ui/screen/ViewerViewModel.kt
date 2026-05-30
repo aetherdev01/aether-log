@@ -72,7 +72,12 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
         }
     }
 
-    fun loadFile(uri: Uri?, fileName: String) {
+    /**
+     * [callerContext]: Activity context dari Compose (LocalContext.current).
+     * WAJIB diisi untuk URI dari ACTION_VIEW agar contentResolver yang dipakai
+     * adalah milik Activity — satu-satunya yang punya grant permission dari intent tersebut.
+     */
+    fun loadFile(uri: Uri?, fileName: String, callerContext: android.content.Context? = null) {
         if (uri == null) {
             _state.update { it.copy(isLoading = false, error = "File tidak ditemukan") }
             return
@@ -82,12 +87,12 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
         loadedUri = uri
 
         viewModelScope.launch {
-            // Strip .gz suffix untuk nama tampilan yang lebih bersih
             val isGzipped   = fileName.endsWith(".gz", ignoreCase = true)
             val displayName = if (isGzipped) GzipUtil.stripGzSuffix(fileName) else fileName
 
             _state.update { it.copy(isLoading = true, error = null, fileName = displayName, isGzipped = isGzipped) }
-            repo.readLines(uri).onSuccess { rawLines ->
+            // Teruskan callerContext agar openInputStream pakai Activity context
+            repo.readLines(uri, callerContext = callerContext).onSuccess { rawLines ->
                 val colors = _state.value.applyColors
                 val parsed = rawLines.map { line ->
                     LogLineParser.parse(line, applyColors = colors)
@@ -101,16 +106,11 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                         error         = null,
                     )
                 }
-                repo.saveRecent(uri, lineCount = rawLines.size)
+                repo.saveRecent(uri, lineCount = rawLines.size, callerContext = callerContext)
             }.onFailure { e ->
-                // Bedakan pesan error agar UI bisa tampilkan tombol yang tepat
                 val message = when (e) {
-                    is SecurityException -> {
-                        // Ini yang muncul di foto: Permission Denial dari ExternalStorageProvider.
-                        // Terjadi ketika URI dari riwayat tidak lagi punya persistent permission,
-                        // atau URI dari ACTION_VIEW tidak di-grant oleh caller.
+                    is SecurityException ->
                         "Izin akses file dicabut atau kedaluwarsa.\n\nSilakan buka file ini lagi melalui tombol \"Buka File\" agar izin diperbaharui."
-                    }
                     is java.io.FileNotFoundException ->
                         "File tidak ditemukan. Mungkin sudah dipindah atau dihapus."
                     is java.io.IOException ->
@@ -119,7 +119,6 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                         e.message ?: "Gagal membaca file"
                 }
                 _state.update { it.copy(isLoading = false, error = message) }
-                // Reset loadedUri agar bisa di-retry
                 loadedUri = null
             }
         }

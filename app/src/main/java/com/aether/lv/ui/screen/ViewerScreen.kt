@@ -62,8 +62,9 @@ fun ViewerScreen(
             ?: fileUri.lastPathSegment?.substringAfterLast('/') ?: "file.log"
     }
 
-    // Load saat compose pertama kali
-    LaunchedEffect(fileUri) { vm.loadFile(fileUri, fileName) }
+    // Load saat compose pertama kali — kirim Activity context agar URI dari ACTION_VIEW
+    // bisa dibaca (grant permission ACTION_VIEW hanya berlaku pada Activity context).
+    LaunchedEffect(fileUri) { vm.loadFile(fileUri, fileName, callerContext = context) }
 
     // Handle jump to end trigger
     LaunchedEffect(state.jumpToEnd) {
