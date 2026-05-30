@@ -3,15 +3,15 @@ package com.aether.lv.ads
 import android.app.Activity
 import android.content.Context
 import android.util.Log
-import android.view.View
 import com.unity3d.ads.IUnityAdsInitializationListener
 import com.unity3d.ads.IUnityAdsLoadListener
 import com.unity3d.ads.IUnityAdsShowListener
 import com.unity3d.ads.UnityAds
 import com.unity3d.ads.UnityAdsShowOptions
 import com.unity3d.ads.metadata.MetaData
+import com.unity3d.services.banners.BannerErrorInfo
 import com.unity3d.services.banners.BannerView
-import com.unity3d.services.banners.IUnityBannerListener
+import com.unity3d.services.banners.UnityBannerSize
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -152,42 +152,40 @@ object AdsManager {
             val bannerView = BannerView(
                 activity,
                 BANNER_UNIT_ID,
-                BannerView.Position.BOTTOM_CENTER
+                UnityBannerSize(320, 50)
             )
 
-            UnityAds.setBannerListener(object : IUnityBannerListener {
-                override fun onUnityBannerLoaded(placementId: String, view: View) {
-                    Log.d(TAG, "Banner loaded: $placementId")
+            bannerView.listener = object : BannerView.IListener {
+                override fun onBannerLoaded(bannerAdView: BannerView) {
+                    Log.d(TAG, "Banner loaded: $BANNER_UNIT_ID")
                     _bannerReady.value = true
-                    container.removeAllViews()
-                    container.addView(view)
                     onLoaded()
                 }
 
-                override fun onUnityBannerUnloaded(placementId: String) {
-                    Log.d(TAG, "Banner unloaded: $placementId")
+                override fun onBannerFailedToLoad(
+                    bannerAdView: BannerView,
+                    errorInfo: BannerErrorInfo
+                ) {
+                    Log.e(TAG, "Banner load failed: ${errorInfo.errorMessage}")
                     _bannerReady.value = false
+                    onFailed(errorInfo.errorMessage ?: "Unknown error")
                 }
 
-                override fun onUnityBannerShow(placementId: String) {
-                    Log.d(TAG, "Banner shown: $placementId")
+                override fun onBannerClick(bannerAdView: BannerView) {
+                    Log.d(TAG, "Banner clicked")
                 }
 
-                override fun onUnityBannerClick(placementId: String) {
-                    Log.d(TAG, "Banner clicked: $placementId")
+                override fun onBannerLeftApplication(bannerAdView: BannerView) {
+                    Log.d(TAG, "Banner left app")
                 }
 
-                override fun onUnityBannerHide(placementId: String) {
-                    Log.d(TAG, "Banner hidden: $placementId")
+                override fun onBannerShown(bannerAdView: BannerView) {
+                    Log.d(TAG, "Banner shown")
                 }
+            }
 
-                override fun onUnityBannerError(message: String) {
-                    Log.e(TAG, "Banner error: $message")
-                    _bannerReady.value = false
-                    onFailed(message)
-                }
-            })
-
+            container.removeAllViews()
+            container.addView(bannerView)
             bannerView.load()
 
         } catch (e: Exception) {
