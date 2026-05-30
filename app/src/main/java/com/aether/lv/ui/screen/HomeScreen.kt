@@ -29,14 +29,18 @@ import com.aether.lv.util.FormatUtil
 import com.aether.lv.ui.component.FileTypeChip
 import com.aether.lv.ui.component.FileTypeIcon
 import kotlinx.coroutines.launch
+import com.aether.lv.ads.BannerAdView
+import com.aether.lv.ads.AdsManager
+import androidx.compose.runtime.collectAsState
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun HomeScreen(
-    onOpenFile : (Uri) -> Unit,
-    onSettings : () -> Unit,
-    onAbout    : () -> Unit,
-    vm         : HomeViewModel = viewModel()
+    onOpenFile          : (Uri) -> Unit,
+    onSettings          : () -> Unit,
+    onAbout             : () -> Unit,
+    onShowInterstitial  : (() -> Unit) -> Unit = { it() },  // wrapper untuk show interstitial sebelum action
+    vm                  : HomeViewModel = viewModel()
 ) {
     val recentFiles  by vm.recentFiles.collectAsStateWithLifecycle()
     val updateState  by vm.updateVm.state.collectAsStateWithLifecycle()
@@ -44,10 +48,24 @@ fun HomeScreen(
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
 
+    // Counter buka file — tampilkan interstitial setiap 3x buka file
+    var fileOpenCount by remember { mutableStateOf(0) }
+
+    // Fungsi buka file dengan logika interstitial
+    val handleOpenFile: (Uri) -> Unit = { uri ->
+        fileOpenCount++
+        if (fileOpenCount % 3 == 0 && AdsManager.interstitialReady.value) {
+            // Tampilkan interstitial setiap 3x, lalu buka file setelah selesai
+            onShowInterstitial { onOpenFile(uri) }
+        } else {
+            onOpenFile(uri)
+        }
+    }
+
     // File picker — izinkan semua tipe file agar user bisa pilih file apapun
     val filePicker = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocument()
-    ) { uri: Uri? -> uri?.let { onOpenFile(it) } }
+    ) { uri: Uri? -> uri?.let { handleOpenFile(it) } }
 
     // ── Update dialog ─────────────────────────────────────────────────────────
     if (updateState.showDialog) {
@@ -62,6 +80,10 @@ fun HomeScreen(
 
     Scaffold(
         snackbarHost = { SnackbarHost(snackbarHostState) },
+        bottomBar = {
+            // Unity Ads Banner — tampil di bawah HomeScreen
+            BannerAdView()
+        },
         topBar = {
             TopAppBar(
                 title = {
@@ -154,7 +176,7 @@ fun HomeScreen(
                         file     = file,
                         onClick  = {
                             if (file.isPersisted) {
-                                onOpenFile(Uri.parse(file.path))
+                                handleOpenFile(Uri.parse(file.path))
                             } else {
                                 // URI dari ACTION_VIEW — tidak bisa dibuka ulang dari riwayat.
                                 // Tampilkan snackbar informatif, bukan error di viewer.

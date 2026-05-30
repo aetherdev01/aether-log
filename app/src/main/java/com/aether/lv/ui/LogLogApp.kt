@@ -1,12 +1,15 @@
 package com.aether.lv.ui
 
+import android.app.Activity
 import android.net.Uri
 import androidx.compose.runtime.*
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
+import androidx.compose.ui.platform.LocalContext
 import androidx.navigation.navArgument
+import com.aether.lv.ads.AdsManager
 import com.aether.lv.data.preferences.ThemePreferences
 import com.aether.lv.ui.screen.AboutScreen
 import com.aether.lv.ui.screen.HomeScreen
@@ -26,7 +29,8 @@ sealed class Screen(val route: String) {
 fun LogLogApp(
     externalFileUri     : Uri?,
     themePrefs          : ThemePreferences,
-    onRequestPermission : () -> Unit = {}   // callback ke MainActivity untuk trigger permission request
+    onRequestPermission : () -> Unit = {},
+    onShowInterstitial  : (() -> Unit) -> Unit = { it() }
 ) {
     val navController = rememberNavController()
 
@@ -54,8 +58,9 @@ fun LogLogApp(
                         launchSingleTop = false
                     }
                 },
-                onSettings = { navController.navigate(Screen.Settings.route) },
-                onAbout    = { navController.navigate(Screen.About.route) }
+                onSettings         = { navController.navigate(Screen.Settings.route) },
+                onAbout            = { navController.navigate(Screen.About.route) },
+                onShowInterstitial = onShowInterstitial
             )
         }
 

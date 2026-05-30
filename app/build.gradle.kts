@@ -30,6 +30,15 @@ android {
         }
     }
 
+    ndkVersion = "27.2.12479018"
+
+    externalNativeBuild {
+        cmake {
+            path = file("src/main/cpp/CMakeLists.txt")
+            version = "3.22.1"
+        }
+    }
+
     signingConfigs {
         create("release") {
             storeFile     = localProps["STORE_FILE"]?.toString()?.let { rootProject.file(it) }
@@ -145,4 +154,7 @@ dependencies {
 
     // Accompanist
     implementation(libs.accompanist.systemuicontroller)
+
+    // Unity Ads SDK
+    implementation(libs.unity.ads)
 }

@@ -18,6 +18,7 @@ import com.aether.lv.data.preferences.ThemePreferences
 import com.aether.lv.permission.PermissionManager
 import com.aether.lv.permission.PermissionRationaleDialog
 import com.aether.lv.ui.LogLogApp
+import com.aether.lv.ads.AdsManager
 import com.aether.lv.ui.theme.LogLogTheme
 
 class MainActivity : ComponentActivity() {
@@ -54,6 +55,9 @@ class MainActivity : ComponentActivity() {
         // Request permission saat launch (hanya jika belum granted)
         requestStoragePermissionIfNeeded()
 
+        // Pre-load interstitial — dilakukan lebih awal agar siap saat dibutuhkan
+        AdsManager.loadInterstitial(this)
+
         val themePrefs = ThemePreferences(this)
 
         setContent {
@@ -62,9 +66,16 @@ class MainActivity : ComponentActivity() {
 
             LogLogTheme(darkTheme = isDark, dynamicColor = isDynamic) {
                 LogLogApp(
-                    externalFileUri = externalFileUri,
-                    themePrefs      = themePrefs,
-                    onRequestPermission = { requestStoragePermissionIfNeeded(force = true) }
+                    externalFileUri     = externalFileUri,
+                    themePrefs          = themePrefs,
+                    onRequestPermission = { requestStoragePermissionIfNeeded(force = true) },
+                    onShowInterstitial  = { afterAction ->
+                        // Tampilkan interstitial, lalu jalankan action setelah selesai/gagal
+                        showInterstitialAd(
+                            onComplete = afterAction,
+                            onFailed   = { afterAction() }  // tetap lanjut jika gagal
+                        )
+                    }
                 )
 
                 // Dialog rationale — ditampilkan dari state Activity
@@ -115,6 +126,25 @@ class MainActivity : ComponentActivity() {
             showPermissionDialog = false
             showManageStorageDialog = false
         }
+    }
+
+    /**
+     * Expose fungsi show interstitial ke Compose layer.
+     * Dipanggil dari HomeScreen (misal saat buka file ke-N).
+     */
+    fun showInterstitialAd(
+        onComplete: () -> Unit = {},
+        onFailed  : (String) -> Unit = {}
+    ) {
+        AdsManager.showInterstitial(
+            activity   = this,
+            onComplete = {
+                // Setelah interstitial selesai, pre-load lagi untuk berikutnya
+                AdsManager.loadInterstitial(this)
+                onComplete()
+            },
+            onFailed = onFailed
+        )
     }
 
     /**

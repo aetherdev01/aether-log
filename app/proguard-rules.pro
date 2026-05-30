@@ -88,3 +88,19 @@
 -dontwarn java.lang.invoke.**
 -dontwarn javax.annotation.**
 -dontwarn sun.misc.**
+
+# ─── Unity Ads ───────────────────────────────────────────────────────────────
+-keep class com.unity3d.** { *; }
+-keep interface com.unity3d.** { *; }
+-keep class com.unity3d.services.** { *; }
+-keep class com.unity3d.ads.** { *; }
+-dontwarn com.unity3d.**
+
+# ─── Native JNI bridge ───────────────────────────────────────────────────────
+# Jaga AdsNative agar nama method-nya tidak di-rename ProGuard
+# (JNI lookup bergantung pada nama kelas dan method yang exact)
+-keepclasseswithmembers class com.aether.lv.ads.AdsNative {
+    native <methods>;
+    public static <methods>;
+}
+-keep class com.aether.lv.ads.AdsNative { *; }
