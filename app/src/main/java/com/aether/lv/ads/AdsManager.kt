@@ -9,34 +9,18 @@ import com.unity3d.ads.IUnityAdsShowListener
 import com.unity3d.ads.UnityAds
 import com.unity3d.ads.UnityAdsShowOptions
 import com.unity3d.ads.metadata.MetaData
+import com.unity3d.services.banners.BannerErrorInfo
+import com.unity3d.services.banners.BannerView
+import com.unity3d.services.banners.IUnityBannerListener
+import com.unity3d.services.banners.UnityBannerPosition
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 
 private const val TAG = "AdsManager"
 
-/**
- * Singleton manager untuk Unity Ads.
- *
- * ID konfigurasi (Game ID, Ad Unit ID) diambil dari native layer via [AdsNative]
- * — tidak ada plain-text ID di Kotlin/Java layer.
- *
- * Usage:
- * ```
- * // Di Application.onCreate():
- * AdsManager.initialize(this)
- *
- * // Load banner (dipasang ke ViewGroup di layout):
- * AdsManager.loadBanner(activity, containerView)
- *
- * // Load + show interstitial:
- * AdsManager.loadInterstitial(activity)
- * AdsManager.showInterstitial(activity)
- * ```
- */
 object AdsManager {
 
-    // ── State ─────────────────────────────────────────────────────────────────
     private val _isInitialized   = MutableStateFlow(false)
     val isInitialized: StateFlow<Boolean> = _isInitialized.asStateFlow()
 
@@ -46,20 +30,10 @@ object AdsManager {
     private val _bannerReady = MutableStateFlow(false)
     val bannerReady: StateFlow<Boolean> = _bannerReady.asStateFlow()
 
-    // ── Config dari native layer ──────────────────────────────────────────────
-    val GAME_ID: String           by lazy { AdsNative.getGameId() }
-    val BANNER_UNIT_ID: String    by lazy { AdsNative.getBannerUnitId() }
+    val GAME_ID: String              by lazy { AdsNative.getGameId() }
+    val BANNER_UNIT_ID: String       by lazy { AdsNative.getBannerUnitId() }
     val INTERSTITIAL_UNIT_ID: String by lazy { AdsNative.getInterstitialUnitId() }
 
-    // ── Init ─────────────────────────────────────────────────────────────────
-
-    /**
-     * Inisialisasi Unity Ads SDK.
-     * Harus dipanggil dari [Application.onCreate] atau [Activity.onCreate] sekali saja.
-     *
-     * [testMode]: true untuk development (tampilkan test ads).
-     *             Selalu false di release build.
-     */
     fun initialize(context: Context, testMode: Boolean = false) {
         if (_isInitialized.value) {
             Log.d(TAG, "Already initialized, skip")
@@ -68,16 +42,8 @@ object AdsManager {
 
         Log.d(TAG, "Initializing Unity Ads | gameId=$GAME_ID | testMode=$testMode")
 
-        // Set GDPR/CCPA consent metadata (default: consent granted)
-        // Sesuaikan dengan policy app — jika butuh consent flow, set false dulu
-        val gdprMetaData = MetaData(context).apply {
-            set("gdpr.consent", true)
-            commit()
-        }
-        val ccpaMetaData = MetaData(context).apply {
-            set("privacy.consent", true)
-            commit()
-        }
+        MetaData(context).apply { set("gdpr.consent", true); commit() }
+        MetaData(context).apply { set("privacy.consent", true); commit() }
 
         UnityAds.initialize(
             context,
@@ -100,13 +66,6 @@ object AdsManager {
         )
     }
 
-    // ── Interstitial ─────────────────────────────────────────────────────────
-
-    /**
-     * Load interstitial ad ke cache.
-     * Panggil ini sebelum [showInterstitial] — lebih baik dipanggil jauh sebelum
-     * momen show (misalnya saat HomeScreen pertama kali dibuka).
-     */
     fun loadInterstitial(activity: Activity) {
         if (!_isInitialized.value) {
             Log.w(TAG, "loadInterstitial: SDK belum initialized")
@@ -132,15 +91,8 @@ object AdsManager {
         })
     }
 
-    /**
-     * Tampilkan interstitial ad.
-     * Pastikan [loadInterstitial] sudah dipanggil dan [interstitialReady] = true.
-     *
-     * [onComplete]: dipanggil setelah ad selesai (user selesai nonton atau skip).
-     * [onFailed]: dipanggil jika show gagal.
-     */
     fun showInterstitial(
-        activity : Activity,
+        activity  : Activity,
         onComplete: () -> Unit = {},
         onFailed  : (String) -> Unit = {}
     ) {
@@ -151,7 +103,7 @@ object AdsManager {
         }
 
         Log.d(TAG, "Showing interstitial: $INTERSTITIAL_UNIT_ID")
-        _interstitialReady.value = false  // reset — harus load ulang setelah show
+        _interstitialReady.value = false
 
         UnityAds.show(
             activity,
@@ -186,23 +138,6 @@ object AdsManager {
         )
     }
 
-    // ── Banner ────────────────────────────────────────────────────────────────
-
-    /**
-     * Load banner ad ke dalam [container] (android.widget.FrameLayout atau LinearLayout).
-     *
-     * Banner Unity Ads menggunakan [com.unity3d.services.banners.BannerView]
-     * yang ditambahkan langsung ke ViewGroup container.
-     *
-     * Karena app ini full Compose, gunakan [AndroidView] di Composable:
-     * ```kotlin
-     * AndroidView(factory = { ctx ->
-     *     FrameLayout(ctx).also { frame ->
-     *         AdsManager.loadBannerIntoView(activity, frame)
-     *     }
-     * })
-     * ```
-     */
     fun loadBannerIntoView(
         activity  : Activity,
         container : android.view.ViewGroup,
@@ -215,34 +150,38 @@ object AdsManager {
         }
 
         try {
-            val bannerView = com.unity3d.services.banners.BannerView(
+            val bannerView = BannerView(
                 activity,
                 BANNER_UNIT_ID,
-                com.unity3d.services.banners.BannerView.Position.BOTTOM_CENTER
+                UnityBannerPosition.BOTTOM_CENTER
             )
 
-            bannerView.listener = object : com.unity3d.services.banners.BannerView.IListener {
-                override fun onBannerLoaded(bannerAdView: com.unity3d.services.banners.BannerView?) {
+            bannerView.listener = object : IUnityBannerListener {
+                override fun onBannerLoaded(bannerAdView: BannerView) {
                     Log.d(TAG, "Banner loaded: $BANNER_UNIT_ID")
                     _bannerReady.value = true
                     onLoaded()
                 }
 
                 override fun onBannerFailedToLoad(
-                    bannerAdView: com.unity3d.services.banners.BannerView?,
-                    errorInfo: com.unity3d.services.banners.BannerErrorInfo?
+                    bannerAdView: BannerView,
+                    errorInfo: BannerErrorInfo
                 ) {
-                    Log.e(TAG, "Banner load failed: ${errorInfo?.errorMessage}")
+                    Log.e(TAG, "Banner load failed: ${errorInfo.errorMessage}")
                     _bannerReady.value = false
-                    onFailed(errorInfo?.errorMessage ?: "Unknown error")
+                    onFailed(errorInfo.errorMessage ?: "Unknown error")
                 }
 
-                override fun onBannerClick(bannerAdView: com.unity3d.services.banners.BannerView?) {
+                override fun onBannerClick(bannerAdView: BannerView) {
                     Log.d(TAG, "Banner clicked")
                 }
 
-                override fun onBannerLeftApplication(bannerAdView: com.unity3d.services.banners.BannerView?) {
+                override fun onBannerLeftApplication(bannerAdView: BannerView) {
                     Log.d(TAG, "Banner left app")
+                }
+
+                override fun onBannerShown(bannerAdView: BannerView) {
+                    Log.d(TAG, "Banner shown")
                 }
             }
 
@@ -256,14 +195,11 @@ object AdsManager {
         }
     }
 
-    /**
-     * Destroy banner — panggil di onDestroy Activity agar tidak memory leak.
-     */
     fun destroyBanner(container: android.view.ViewGroup?) {
         try {
-            (container?.getChildAt(0) as? com.unity3d.services.banners.BannerView)?.destroy()
+            (container?.getChildAt(0) as? BannerView)?.destroy()
             container?.removeAllViews()
-        } catch (_: Exception) { /* ignore */ }
+        } catch (_: Exception) { }
         _bannerReady.value = false
     }
 }
