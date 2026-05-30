@@ -22,6 +22,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.aether.lv.data.model.RecentFile
+import com.aether.lv.update.UpdateDialog
 import com.aether.lv.util.FileTypeUtil
 import com.aether.lv.util.FormatUtil
 import com.aether.lv.ui.component.FileTypeChip
@@ -35,13 +36,25 @@ fun HomeScreen(
     onAbout    : () -> Unit,
     vm         : HomeViewModel = viewModel()
 ) {
-    val recentFiles by vm.recentFiles.collectAsStateWithLifecycle()
+    val recentFiles  by vm.recentFiles.collectAsStateWithLifecycle()
+    val updateState  by vm.updateVm.state.collectAsStateWithLifecycle()
     var showClearDialog by remember { mutableStateOf(false) }
 
-    // File picker — filter ekstensi yang diizinkan
+    // File picker
     val filePicker = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocument()
     ) { uri: Uri? -> uri?.let { onOpenFile(it) } }
+
+    // ── Update dialog ─────────────────────────────────────────────────────────
+    if (updateState.showDialog) {
+        UpdateDialog(
+            state     = updateState,
+            onDismiss = { vm.updateVm.dismissDialog() },
+            onDownload= { vm.updateVm.startDownload() },
+            onInstall = { vm.updateVm.install() },
+            onRetry   = { vm.updateVm.retryDownload() }
+        )
+    }
 
     Scaffold(
         topBar = {
@@ -57,6 +70,20 @@ fun HomeScreen(
                     }
                 },
                 actions = {
+                    // Badge update di icon bila ada versi baru
+                    if (updateState.updateInfo?.isNewVersion == true) {
+                        BadgedBox(
+                            badge = {
+                                Badge(
+                                    containerColor = MaterialTheme.colorScheme.error
+                                )
+                            }
+                        ) {
+                            IconButton(onClick = { vm.updateVm.showUpdateDialog() }) {
+                                Icon(Icons.Outlined.SystemUpdate, contentDescription = "Update tersedia")
+                            }
+                        }
+                    }
                     IconButton(onClick = onAbout) {
                         Icon(Icons.Outlined.Info, contentDescription = "Tentang")
                     }
@@ -77,8 +104,8 @@ fun HomeScreen(
                         "application/xml", "text/x-log", "*/*"
                     ))
                 },
-                icon    = { Icon(Icons.Rounded.FolderOpen, "Buka File") },
-                text    = { Text("Buka File") }
+                icon = { Icon(Icons.Rounded.FolderOpen, "Buka File") },
+                text = { Text("Buka File") }
             )
         }
     ) { innerPadding ->
@@ -93,10 +120,10 @@ fun HomeScreen(
             )
         } else {
             LazyColumn(
-                modifier       = Modifier
+                modifier            = Modifier
                     .fillMaxSize()
                     .padding(innerPadding),
-                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
+                contentPadding      = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 item {
@@ -107,12 +134,11 @@ fun HomeScreen(
                     ) {
                         Text(
                             "Riwayat (${recentFiles.size})",
-                            style = MaterialTheme.typography.titleMedium,
+                            style      = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.SemiBold
                         )
                         TextButton(onClick = { showClearDialog = true }) {
-                            Icon(Icons.Outlined.DeleteSweep, null,
-                                modifier = Modifier.size(16.dp))
+                            Icon(Icons.Outlined.DeleteSweep, null, modifier = Modifier.size(16.dp))
                             Spacer(Modifier.width(4.dp))
                             Text("Hapus Semua")
                         }
@@ -130,7 +156,7 @@ fun HomeScreen(
                     )
                 }
 
-                item { Spacer(Modifier.height(80.dp)) } // FAB clearance
+                item { Spacer(Modifier.height(80.dp)) }
             }
         }
     }
@@ -165,12 +191,12 @@ private fun RecentFileCard(
     val ext = file.fileType
 
     Card(
-        modifier = Modifier
+        modifier  = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(16.dp))
             .clickable { onClick() },
-        shape  = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(
+        shape     = RoundedCornerShape(16.dp),
+        colors    = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
         ),
         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
@@ -179,13 +205,12 @@ private fun RecentFileCard(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(12.dp),
-            verticalAlignment = Alignment.CenterVertically,
+            verticalAlignment     = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            // Ikon tipe file
             Surface(
-                shape  = RoundedCornerShape(12.dp),
-                color  = MaterialTheme.colorScheme.primaryContainer,
+                shape    = RoundedCornerShape(12.dp),
+                color    = MaterialTheme.colorScheme.primaryContainer,
                 modifier = Modifier.size(48.dp)
             ) {
                 Box(contentAlignment = Alignment.Center) {
@@ -193,40 +218,31 @@ private fun RecentFileCard(
                 }
             }
 
-            // Info file
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text  = file.displayName,
-                    style = MaterialTheme.typography.bodyMedium,
+                    text       = file.displayName,
+                    style      = MaterialTheme.typography.bodyMedium,
                     fontWeight = FontWeight.SemiBold,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
+                    maxLines   = 1,
+                    overflow   = TextOverflow.Ellipsis
                 )
                 Spacer(Modifier.height(2.dp))
                 Row(
                     horizontalArrangement = Arrangement.spacedBy(6.dp),
-                    verticalAlignment = Alignment.CenterVertically
+                    verticalAlignment     = Alignment.CenterVertically
                 ) {
                     FileTypeChip(label = FileTypeUtil.label(ext))
-                    Text(
-                        "•",
+                    Text("•", style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(FormatUtil.formatSize(file.sizeBytes),
                         style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Text(
-                        FormatUtil.formatSize(file.sizeBytes),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
                     if (file.lineCount > 0) {
-                        Text("•",
+                        Text("•", style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text("${file.lineCount} baris",
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        Text(
-                            "${file.lineCount} baris",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
                     }
                 }
                 Spacer(Modifier.height(2.dp))
@@ -237,16 +253,15 @@ private fun RecentFileCard(
                 )
             }
 
-            // Menu hapus
             Box {
                 IconButton(onClick = { showMenu = true }) {
                     Icon(Icons.Outlined.MoreVert, null, modifier = Modifier.size(20.dp))
                 }
                 DropdownMenu(expanded = showMenu, onDismissRequest = { showMenu = false }) {
                     DropdownMenuItem(
-                        text = { Text("Hapus dari Riwayat") },
+                        text        = { Text("Hapus dari Riwayat") },
                         leadingIcon = { Icon(Icons.Outlined.Delete, null) },
-                        onClick = {
+                        onClick     = {
                             showMenu = false
                             onDelete()
                         }
@@ -259,19 +274,19 @@ private fun RecentFileCard(
 
 @Composable
 private fun EmptyState(
-    modifier    : Modifier = Modifier,
-    onPickFile  : () -> Unit
+    modifier   : Modifier = Modifier,
+    onPickFile : () -> Unit
 ) {
     Column(
-        modifier = modifier,
+        modifier            = modifier,
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center
     ) {
         Icon(
-            imageVector = Icons.Outlined.FolderOpen,
+            imageVector        = Icons.Outlined.FolderOpen,
             contentDescription = null,
-            modifier = Modifier.size(80.dp),
-            tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.4f)
+            modifier           = Modifier.size(80.dp),
+            tint               = MaterialTheme.colorScheme.primary.copy(alpha = 0.4f)
         )
         Spacer(Modifier.height(16.dp))
         Text(
