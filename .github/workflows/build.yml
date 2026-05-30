@@ -23,20 +23,16 @@ jobs:
           java-version: 17
 
       # ── 3. Setup Gradle ───────────────────────────────────────────────────────
+      # Tidak perlu "gradle wrapper" manual — setup-gradle sudah handle ini.
+      # Versi wrapper diambil dari gradle/wrapper/gradle-wrapper.properties di repo.
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
-        with:
-          gradle-version: "8.13"
 
-      # ── 4. Generate gradlew ───────────────────────────────────────────────────
-      - name: Generate Gradle wrapper
-        run: gradle wrapper --gradle-version 8.13
-
-      # ── 5. Gradle wrapper permission ─────────────────────────────────────────
+      # ── 4. Gradle wrapper permission ─────────────────────────────────────────
       - name: Grant execute permission
         run: chmod +x ./gradlew
 
-      # ── 6. Gradle cache ──────────────────────────────────────────────────────
+      # ── 5. Gradle cache ──────────────────────────────────────────────────────
       - name: Cache Gradle
         uses: actions/cache@v4
         with:
@@ -46,7 +42,7 @@ jobs:
           key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/libs.versions.toml', '**/gradle-wrapper.properties') }}
           restore-keys: ${{ runner.os }}-gradle-
 
-      # ── 7. Setup keystore ────────────────────────────────────────────────────
+      # ── 6. Setup keystore ────────────────────────────────────────────────────
       - name: Setup signing
         run: |
           echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 -d > log.jks
@@ -57,11 +53,11 @@ jobs:
             "KEY_PASSWORD=${{ secrets.KEY_PASSWORD }}" \
             > local.properties
 
-      # ── 8. Build Release APK ─────────────────────────────────────────────────
+      # ── 7. Build Release APK ─────────────────────────────────────────────────
       - name: Build Release APK
         run: ./gradlew assembleRelease --no-daemon --stacktrace
 
-      # ── 9. Upload artifact ───────────────────────────────────────────────────
+      # ── 8. Upload artifact ───────────────────────────────────────────────────
       - name: Upload Release APK
         uses: actions/upload-artifact@v4
         with:
@@ -69,7 +65,7 @@ jobs:
           path: app/build/outputs/apk/release/loglog-v*-release.apk
           if-no-files-found: error
 
-      # ── 10. Notif Telegram ───────────────────────────────────────────────────
+      # ── 9. Notif Telegram ───────────────────────────────────────────────────
       - name: Telegram Notification
         if: always()
         run: |
