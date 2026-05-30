@@ -9,10 +9,11 @@ import androidx.room.PrimaryKey
 @Entity(tableName = "recent_files")
 data class RecentFile(
     @PrimaryKey
-    val path: String,           // URI string (content:// atau file://)
-    val displayName: String,    // Nama file tampil
-    val fileType: String,       // "log", "txt", "json", "xml", "yaml", "err", "out"
-    val sizeBytes: Long,        // Ukuran file bytes
-    val lastOpenedAt: Long,     // Epoch millis
-    val lineCount: Int = 0,     // Jumlah baris (diisi saat baca)
+    val path: String,               // URI string (content:// atau file://)
+    val displayName: String,        // Nama file tampil
+    val fileType: String,           // "log", "txt", "json", "xml", "yaml", "err", "out"
+    val sizeBytes: Long,            // Ukuran file bytes
+    val lastOpenedAt: Long,         // Epoch millis
+    val lineCount: Int = 0,         // Jumlah baris (diisi saat baca)
+    val isPersisted: Boolean = true, // false = URI dari ACTION_VIEW/share, tidak bisa dibuka ulang dari riwayat
 )

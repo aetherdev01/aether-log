@@ -20,23 +20,23 @@ class FileRepository(
     val recentFiles: Flow<List<RecentFile>> = dao.getAllFlow()
 
     suspend fun saveRecent(uri: Uri, lineCount: Int = 0) = withContext(Dispatchers.IO) {
-        // Ambil persistent permission agar URI tetap bisa dibuka di sesi berikutnya.
-        // ACTION_OPEN_DOCUMENT memberi FLAG_GRANT_PERSISTABLE_URI_PERMISSION; kita harus
-        // secara eksplisit "claim" permission itu via takePersistableUriPermission.
-        // Cek dulu apakah permission sudah ada (idempoten) untuk menghindari SecurityException
-        // pada URI dari ACTION_VIEW / share yang tidak support persistable grant.
+        // Coba ambil persistent permission agar URI bisa dibuka ulang di sesi berikutnya.
+        // ACTION_OPEN_DOCUMENT: support persistable → takePersistableUriPermission berhasil.
+        // ACTION_VIEW dari file manager: TIDAK support persistable → SecurityException → isPersisted = false.
         val alreadyPersisted = context.contentResolver.persistedUriPermissions.any { perm ->
             perm.uri == uri && perm.isReadPermission
         }
-        if (!alreadyPersisted) {
+        val isPersisted = if (alreadyPersisted) {
+            true // Sudah ada — tidak perlu take lagi
+        } else {
             try {
                 context.contentResolver.takePersistableUriPermission(
                     uri,
                     Intent.FLAG_GRANT_READ_URI_PERMISSION
                 )
+                true // Berhasil → URI bisa dibuka ulang dari riwayat
             } catch (_: SecurityException) {
-                // URI dari ACTION_VIEW/share eksternal tidak support persistable — aman diabaikan.
-                // File tetap bisa dibuka selama session ini; riwayat disimpan tanpa persistent grant.
+                false // Gagal → URI dari ACTION_VIEW/share, hanya valid di session ini
             }
         }
 
@@ -49,7 +49,8 @@ class FileRepository(
                 fileType     = ext.ifBlank { "log" },
                 sizeBytes    = info.size,
                 lastOpenedAt = System.currentTimeMillis(),
-                lineCount    = lineCount
+                lineCount    = lineCount,
+                isPersisted  = isPersisted
             )
         )
     }
@@ -142,15 +143,20 @@ class FileRepository(
     }
 
     /**
-     * Hapus entri riwayat yang URI-nya sudah tidak accessible (permission dicabut / file dihapus).
-     * Panggil ini saat HomeScreen pertama kali load untuk membersihkan stale entries.
+     * Hapus entri riwayat yang URI-nya sudah tidak accessible.
+     * Hanya cek entry dengan isPersisted=true — entry non-persisted (ACTION_VIEW)
+     * memang tidak bisa diakses ulang dan itu expected behavior, bukan error.
      */
     suspend fun pruneInaccessibleRecents() = withContext(Dispatchers.IO) {
         val all = dao.getAll()
         all.forEach { file ->
             val uri = Uri.parse(file.path)
-            // Hanya prune content:// URI — file:// path tidak perlu persistent permission
-            if (uri.scheme == "content" && !isUriAccessible(uri)) {
+            // Skip: file:// tidak butuh persistent permission
+            if (uri.scheme != "content") return@forEach
+            // Skip: entry non-persisted sudah diketahui tidak bisa dibuka ulang
+            if (!file.isPersisted) return@forEach
+            // Hapus hanya jika sebelumnya bisa (isPersisted=true) tapi sekarang tidak bisa
+            if (!isUriAccessible(uri)) {
                 dao.deleteByPath(file.path)
             }
         }

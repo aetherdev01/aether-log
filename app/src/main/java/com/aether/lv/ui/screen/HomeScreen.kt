@@ -19,6 +19,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.aether.lv.data.model.RecentFile
@@ -27,6 +28,7 @@ import com.aether.lv.util.FileTypeUtil
 import com.aether.lv.util.FormatUtil
 import com.aether.lv.ui.component.FileTypeChip
 import com.aether.lv.ui.component.FileTypeIcon
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -39,6 +41,8 @@ fun HomeScreen(
     val recentFiles  by vm.recentFiles.collectAsStateWithLifecycle()
     val updateState  by vm.updateVm.state.collectAsStateWithLifecycle()
     var showClearDialog by remember { mutableStateOf(false) }
+    val snackbarHostState = remember { SnackbarHostState() }
+    val scope = rememberCoroutineScope()
 
     // File picker — izinkan semua tipe file agar user bisa pilih file apapun
     val filePicker = rememberLauncherForActivityResult(
@@ -57,6 +61,7 @@ fun HomeScreen(
     }
 
     Scaffold(
+        snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             TopAppBar(
                 title = {
@@ -146,9 +151,22 @@ fun HomeScreen(
                     key   = { it.path }
                 ) { file ->
                     RecentFileCard(
-                        file    = file,
-                        onClick = { onOpenFile(Uri.parse(file.path)) },
-                        onDelete= { vm.removeRecent(file.path) }
+                        file     = file,
+                        onClick  = {
+                            if (file.isPersisted) {
+                                onOpenFile(Uri.parse(file.path))
+                            } else {
+                                // URI dari ACTION_VIEW — tidak bisa dibuka ulang dari riwayat.
+                                // Tampilkan snackbar informatif, bukan error di viewer.
+                                scope.launch {
+                                    snackbarHostState.showSnackbar(
+                                        message     = "File ini dibuka via file manager. Buka lagi dari file manager untuk membacanya.",
+                                        duration    = SnackbarDuration.Long
+                                    )
+                                }
+                            }
+                        },
+                        onDelete = { vm.removeRecent(file.path) }
                     )
                 }
 
@@ -185,12 +203,16 @@ private fun RecentFileCard(
 ) {
     var showMenu by remember { mutableStateOf(false) }
     val ext = file.fileType
+    val isNonPersisted = !file.isPersisted
 
     Card(
         modifier  = Modifier.fillMaxWidth(),
         shape     = RoundedCornerShape(16.dp),
         colors    = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+            containerColor = if (isNonPersisted)
+                MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)
+            else
+                MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
         ),
         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
         onClick   = onClick
@@ -204,7 +226,10 @@ private fun RecentFileCard(
         ) {
             Surface(
                 shape    = RoundedCornerShape(12.dp),
-                color    = MaterialTheme.colorScheme.primaryContainer,
+                color    = if (isNonPersisted)
+                    MaterialTheme.colorScheme.secondaryContainer
+                else
+                    MaterialTheme.colorScheme.primaryContainer,
                 modifier = Modifier.size(48.dp)
             ) {
                 Box(contentAlignment = Alignment.Center) {
@@ -213,13 +238,48 @@ private fun RecentFileCard(
             }
 
             Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text       = file.displayName,
-                    style      = MaterialTheme.typography.bodyMedium,
-                    fontWeight = FontWeight.SemiBold,
-                    maxLines   = 1,
-                    overflow   = TextOverflow.Ellipsis
-                )
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Text(
+                        text       = file.displayName,
+                        style      = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        maxLines   = 1,
+                        overflow   = TextOverflow.Ellipsis,
+                        modifier   = Modifier.weight(1f, fill = false),
+                        color      = if (isNonPersisted)
+                            MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
+                        else
+                            MaterialTheme.colorScheme.onSurface
+                    )
+                    // Badge "Sementara" untuk entry non-persisted
+                    if (isNonPersisted) {
+                        Surface(
+                            shape = RoundedCornerShape(4.dp),
+                            color = MaterialTheme.colorScheme.tertiaryContainer
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(2.dp)
+                            ) {
+                                Icon(
+                                    Icons.Outlined.LinkOff, null,
+                                    modifier = Modifier.size(10.dp),
+                                    tint = MaterialTheme.colorScheme.onTertiaryContainer
+                                )
+                                Text(
+                                    "Sementara",
+                                    style    = MaterialTheme.typography.labelSmall,
+                                    fontSize = 9.sp,
+                                    color    = MaterialTheme.colorScheme.onTertiaryContainer
+                                )
+                            }
+                        }
+                    }
+                }
                 Spacer(Modifier.height(2.dp))
                 Row(
                     horizontalArrangement = Arrangement.spacedBy(6.dp),
@@ -243,7 +303,10 @@ private fun RecentFileCard(
                 Text(
                     FormatUtil.formatRelativeTime(file.lastOpenedAt),
                     style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.primary
+                    color = if (isNonPersisted)
+                        MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+                    else
+                        MaterialTheme.colorScheme.primary
                 )
             }
 
