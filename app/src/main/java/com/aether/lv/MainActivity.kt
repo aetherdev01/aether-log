@@ -13,7 +13,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
-import androidx.core.content.ContextCompat
 import com.aether.lv.data.preferences.ThemePreferences
 import com.aether.lv.permission.PermissionManager
 import com.aether.lv.permission.PermissionRationaleDialog
@@ -25,22 +24,11 @@ class MainActivity : ComponentActivity() {
 
     private var externalFileUri: Uri? = null
 
-    // State untuk tampilkan rationale dialog dari Compose
     private var showPermissionDialog by mutableStateOf(false)
     private var showManageStorageDialog by mutableStateOf(false)
 
-    // Launcher untuk runtime permission (READ_EXTERNAL_STORAGE / READ_MEDIA_IMAGES)
     private val requestPermissionLauncher =
-        registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { results ->
-            val allGranted = results.values.all { it }
-            if (!allGranted) {
-                // User tolak — tunjukkan dialog arahkan ke Settings
-                showPermissionDialog = false
-                showManageStorageDialog = false
-            }
-            // Jika granted, app sudah bisa baca file. Tidak perlu action tambahan
-            // karena FileRepository.readLines() akan retry otomatis saat file dibuka lagi.
-        }
+        registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { _ -> }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         installSplashScreen()
@@ -52,10 +40,10 @@ class MainActivity : ComponentActivity() {
             else               -> null
         }
 
-        // Request permission saat launch (hanya jika belum granted)
         requestStoragePermissionIfNeeded()
 
-        // Pre-load interstitial — dilakukan lebih awal agar siap saat dibutuhkan
+        // loadInterstitial akan pending jika SDK belum init —
+        // AdsManager akan otomatis load setelah onInitializationComplete
         AdsManager.loadInterstitial(this)
 
         val themePrefs = ThemePreferences(this)
@@ -70,15 +58,13 @@ class MainActivity : ComponentActivity() {
                     themePrefs          = themePrefs,
                     onRequestPermission = { requestStoragePermissionIfNeeded(force = true) },
                     onShowInterstitial  = { afterAction ->
-                        // Tampilkan interstitial, lalu jalankan action setelah selesai/gagal
                         showInterstitialAd(
                             onComplete = afterAction,
-                            onFailed   = { afterAction() }  // tetap lanjut jika gagal
+                            onFailed   = { afterAction() }
                         )
                     }
                 )
 
-                // Dialog rationale — ditampilkan dari state Activity
                 if (showPermissionDialog) {
                     PermissionRationaleDialog(
                         showManageStorage    = false,
@@ -99,7 +85,7 @@ class MainActivity : ComponentActivity() {
                 if (showManageStorageDialog) {
                     PermissionRationaleDialog(
                         showManageStorage  = true,
-                        onRequestPermission = { /* tidak dipakai di mode ini */ },
+                        onRequestPermission = {},
                         onOpenSettings = {
                             showManageStorageDialog = false
                             PermissionManager.manageStorageSettingsIntent(this)
@@ -121,17 +107,13 @@ class MainActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
-        // Re-check saat kembali dari Settings — kalau sudah granted, dismiss dialog
-        if (PermissionManager.hasStoragePermission(this)) {
+        if (PermissionManager.hasStoragePermission(this) ||
+            PermissionManager.canReadArbitraryFiles(this)) {
             showPermissionDialog = false
             showManageStorageDialog = false
         }
     }
 
-    /**
-     * Expose fungsi show interstitial ke Compose layer.
-     * Dipanggil dari HomeScreen (misal saat buka file ke-N).
-     */
     fun showInterstitialAd(
         onComplete: () -> Unit = {},
         onFailed  : (String) -> Unit = {}
@@ -139,7 +121,6 @@ class MainActivity : ComponentActivity() {
         AdsManager.showInterstitial(
             activity   = this,
             onComplete = {
-                // Setelah interstitial selesai, pre-load lagi untuk berikutnya
                 AdsManager.loadInterstitial(this)
                 onComplete()
             },
@@ -147,11 +128,6 @@ class MainActivity : ComponentActivity() {
         )
     }
 
-    /**
-     * Persist URI permission segera saat intent ACTION_VIEW diterima.
-     * Tanpa ini, permission ephemeral dari file manager hangus saat Activity
-     * di-recreate (rotate, memory trim, kembali dari background).
-     */
     private fun persistUriPermission(uri: Uri, intent: Intent) {
         val flags = intent.flags and (
             Intent.FLAG_GRANT_READ_URI_PERMISSION or
@@ -159,50 +135,38 @@ class MainActivity : ComponentActivity() {
         )
         try {
             contentResolver.takePersistableUriPermission(uri, flags)
-        } catch (_: SecurityException) {
-            // URI tidak support persistable (misal file:// scheme) — abaikan
-        }
+        } catch (_: SecurityException) { }
     }
 
-    /**
-     * Request storage permission sesuai API level.
-     *
-     * Flow yang benar:
-     * 1. SAF (ACTION_OPEN_DOCUMENT) tidak butuh runtime permission — sistem yang handle.
-     * 2. Untuk Android 13+: READ_MEDIA_IMAGES di-request untuk non-SAF flow.
-     * 3. Untuk Android 11-12: READ_EXTERNAL_STORAGE.
-     * 4. MANAGE_EXTERNAL_STORAGE hanya ditampilkan via tombol di Settings, bukan auto-prompt.
-     *
-     * [force] = true → dipanggil dari tombol "Izinkan Akses Storage" di ErrorState.
-     */
     fun requestStoragePermissionIfNeeded(force: Boolean = false) {
-        // Jika sudah punya MANAGE_EXTERNAL_STORAGE (full access), tidak perlu apa-apa
+        // Android 11+: sudah punya MANAGE_EXTERNAL_STORAGE → tidak perlu apa-apa
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R &&
             android.os.Environment.isExternalStorageManager()) return
 
         val perms = PermissionManager.requiredPermissions()
 
-        // Cek apakah runtime permission sudah granted
+        if (perms.isEmpty()) {
+            // Android 13+: tidak ada runtime permission untuk file arbitrary
+            // Harus minta MANAGE_EXTERNAL_STORAGE via Settings
+            if (force) showManageStorageDialog = true
+            return
+        }
+
         val allGranted = perms.all { perm ->
             androidx.core.content.ContextCompat.checkSelfPermission(this, perm) ==
                 android.content.pm.PackageManager.PERMISSION_GRANTED
         }
         if (allGranted && !force) return
 
-        val shouldShowRationale = perms.any { perm ->
-            shouldShowRequestPermissionRationale(perm)
-        }
+        val shouldShowRationale = perms.any { shouldShowRequestPermissionRationale(it) }
 
         when {
-            // Kalau force (dari tombol UI) dan sudah pernah deny berkali-kali
-            // → arahkan ke App Settings, bukan MANAGE_EXTERNAL_STORAGE
-            force && shouldShowRationale -> {
-                showPermissionDialog = true
+            force && shouldShowRationale -> showPermissionDialog = true
+            force && !shouldShowRationale && !allGranted -> {
+                // Sudah deny permanent → arahkan ke Settings
+                showManageStorageDialog = true
             }
-            // Pertama kali atau force tanpa rationale → langsung request
-            else -> {
-                requestPermissionLauncher.launch(perms.toTypedArray())
-            }
+            else -> requestPermissionLauncher.launch(perms.toTypedArray())
         }
     }
 }

@@ -33,6 +33,9 @@ object AdsManager {
     val BANNER_UNIT_ID: String       by lazy { AdsNative.getBannerUnitId() }
     val INTERSTITIAL_UNIT_ID: String by lazy { AdsNative.getInterstitialUnitId() }
 
+    // Simpan activity untuk load interstitial setelah init selesai
+    private var pendingInterstitialActivity: Activity? = null
+
     fun initialize(context: Context, testMode: Boolean = false) {
         if (_isInitialized.value) {
             Log.d(TAG, "Already initialized, skip")
@@ -52,6 +55,11 @@ object AdsManager {
                 override fun onInitializationComplete() {
                     Log.d(TAG, "Unity Ads initialized successfully")
                     _isInitialized.value = true
+                    // Load interstitial otomatis setelah init selesai
+                    pendingInterstitialActivity?.let {
+                        loadInterstitial(it)
+                        pendingInterstitialActivity = null
+                    }
                 }
 
                 override fun onInitializationFailed(
@@ -60,14 +68,20 @@ object AdsManager {
                 ) {
                     Log.e(TAG, "Unity Ads init failed: $error — $message")
                     _isInitialized.value = false
+                    pendingInterstitialActivity = null
                 }
             }
         )
     }
 
+    /**
+     * Load interstitial. Kalau SDK belum init, simpan activity dan load
+     * otomatis begitu onInitializationComplete dipanggil.
+     */
     fun loadInterstitial(activity: Activity) {
         if (!_isInitialized.value) {
-            Log.w(TAG, "loadInterstitial: SDK belum initialized")
+            Log.d(TAG, "SDK belum init — pending interstitial load")
+            pendingInterstitialActivity = activity
             return
         }
         _interstitialReady.value = false
