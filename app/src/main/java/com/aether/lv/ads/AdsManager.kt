@@ -8,7 +8,6 @@ import com.unity3d.ads.IUnityAdsLoadListener
 import com.unity3d.ads.IUnityAdsShowListener
 import com.unity3d.ads.UnityAds
 import com.unity3d.ads.UnityAdsShowOptions
-import com.unity3d.ads.metadata.MetaData
 import com.unity3d.services.banners.BannerErrorInfo
 import com.unity3d.services.banners.BannerView
 import com.unity3d.services.banners.UnityBannerSize
@@ -20,32 +19,29 @@ private const val TAG = "AdsManager"
 
 object AdsManager {
 
-    private val _isInitialized   = MutableStateFlow(false)
+    private val _isInitialized     = MutableStateFlow(false)
     val isInitialized: StateFlow<Boolean> = _isInitialized.asStateFlow()
 
     private val _interstitialReady = MutableStateFlow(false)
     val interstitialReady: StateFlow<Boolean> = _interstitialReady.asStateFlow()
 
-    private val _bannerReady = MutableStateFlow(false)
+    private val _bannerReady       = MutableStateFlow(false)
     val bannerReady: StateFlow<Boolean> = _bannerReady.asStateFlow()
 
     val GAME_ID: String              by lazy { AdsNative.getGameId() }
     val BANNER_UNIT_ID: String       by lazy { AdsNative.getBannerUnitId() }
     val INTERSTITIAL_UNIT_ID: String by lazy { AdsNative.getInterstitialUnitId() }
 
-    // Simpan activity untuk load interstitial setelah init selesai
     private var pendingInterstitialActivity: Activity? = null
 
     fun initialize(context: Context, testMode: Boolean = false) {
-        if (_isInitialized.value) {
-            Log.d(TAG, "Already initialized, skip")
-            return
-        }
+        if (_isInitialized.value) return
 
-        Log.d(TAG, "Initializing Unity Ads | gameId=$GAME_ID | testMode=$testMode")
+        Log.d(TAG, "Initializing Unity Ads | gameId=$GAME_ID testMode=$testMode")
 
-        MetaData(context).apply { set("gdpr.consent", true); commit() }
-        MetaData(context).apply { set("privacy.consent", true); commit() }
+        // Android 16 / Unity Ads 4.12: gunakan UnityAds.setPrivacyConsent
+        // MetaData "gdpr.consent" deprecated di SDK 4.x
+        UnityAds.setPrivacyConsent(true)
 
         UnityAds.initialize(
             context,
@@ -53,20 +49,18 @@ object AdsManager {
             testMode,
             object : IUnityAdsInitializationListener {
                 override fun onInitializationComplete() {
-                    Log.d(TAG, "Unity Ads initialized successfully")
+                    Log.d(TAG, "Unity Ads initialized OK")
                     _isInitialized.value = true
-                    // Load interstitial otomatis setelah init selesai
                     pendingInterstitialActivity?.let {
                         loadInterstitial(it)
                         pendingInterstitialActivity = null
                     }
                 }
-
                 override fun onInitializationFailed(
                     error: UnityAds.UnityAdsInitializationError?,
                     message: String?
                 ) {
-                    Log.e(TAG, "Unity Ads init failed: $error — $message")
+                    Log.e(TAG, "Init failed: $error — $message")
                     _isInitialized.value = false
                     pendingInterstitialActivity = null
                 }
@@ -74,13 +68,9 @@ object AdsManager {
         )
     }
 
-    /**
-     * Load interstitial. Kalau SDK belum init, simpan activity dan load
-     * otomatis begitu onInitializationComplete dipanggil.
-     */
     fun loadInterstitial(activity: Activity) {
         if (!_isInitialized.value) {
-            Log.d(TAG, "SDK belum init — pending interstitial load")
+            Log.d(TAG, "SDK belum init — pending load interstitial")
             pendingInterstitialActivity = activity
             return
         }
@@ -92,13 +82,12 @@ object AdsManager {
                 Log.d(TAG, "Interstitial loaded: $placementId")
                 _interstitialReady.value = true
             }
-
             override fun onUnityAdsFailedToLoad(
                 placementId: String,
                 error: UnityAds.UnityAdsLoadError?,
                 message: String?
             ) {
-                Log.e(TAG, "Interstitial load failed: $placementId | $error | $message")
+                Log.e(TAG, "Interstitial load failed: $error — $message")
                 _interstitialReady.value = false
             }
         })
@@ -110,41 +99,33 @@ object AdsManager {
         onFailed  : (String) -> Unit = {}
     ) {
         if (!_interstitialReady.value) {
-            Log.w(TAG, "showInterstitial: ad belum ready, skip")
+            Log.w(TAG, "Interstitial belum ready")
             onFailed("Ad belum siap")
             return
         }
-
-        Log.d(TAG, "Showing interstitial: $INTERSTITIAL_UNIT_ID")
         _interstitialReady.value = false
+        Log.d(TAG, "Showing interstitial: $INTERSTITIAL_UNIT_ID")
 
         UnityAds.show(
             activity,
             INTERSTITIAL_UNIT_ID,
             UnityAdsShowOptions(),
             object : IUnityAdsShowListener {
-                override fun onUnityAdsShowStart(placementId: String) {
-                    Log.d(TAG, "Interstitial show start: $placementId")
-                }
-
-                override fun onUnityAdsShowClick(placementId: String) {
-                    Log.d(TAG, "Interstitial clicked: $placementId")
-                }
-
+                override fun onUnityAdsShowStart(placementId: String)  { Log.d(TAG, "Show start: $placementId") }
+                override fun onUnityAdsShowClick(placementId: String)  { Log.d(TAG, "Clicked: $placementId") }
                 override fun onUnityAdsShowComplete(
                     placementId: String,
                     state: UnityAds.UnityAdsShowCompletionState?
                 ) {
-                    Log.d(TAG, "Interstitial complete: $placementId | state=$state")
+                    Log.d(TAG, "Complete: $placementId state=$state")
                     onComplete()
                 }
-
                 override fun onUnityAdsShowFailure(
                     placementId: String,
                     error: UnityAds.UnityAdsShowError?,
                     message: String?
                 ) {
-                    Log.e(TAG, "Interstitial show failed: $error | $message")
+                    Log.e(TAG, "Show failed: $error — $message")
                     onFailed(message ?: "Unknown error")
                 }
             }
@@ -158,50 +139,29 @@ object AdsManager {
         onFailed  : (String) -> Unit = {}
     ) {
         if (!_isInitialized.value) {
-            Log.w(TAG, "loadBanner: SDK belum initialized")
+            Log.w(TAG, "loadBanner: SDK belum init")
             return
         }
-
         try {
-            val bannerView = BannerView(
-                activity,
-                BANNER_UNIT_ID,
-                UnityBannerSize(320, 50)
-            )
-
+            val bannerView = BannerView(activity, BANNER_UNIT_ID, UnityBannerSize(320, 50))
             bannerView.listener = object : BannerView.IListener {
                 override fun onBannerLoaded(bannerAdView: BannerView) {
-                    Log.d(TAG, "Banner loaded: $BANNER_UNIT_ID")
+                    Log.d(TAG, "Banner loaded")
                     _bannerReady.value = true
                     onLoaded()
                 }
-
-                override fun onBannerFailedToLoad(
-                    bannerAdView: BannerView,
-                    errorInfo: BannerErrorInfo
-                ) {
-                    Log.e(TAG, "Banner load failed: ${errorInfo.errorMessage}")
+                override fun onBannerFailedToLoad(bannerAdView: BannerView, errorInfo: BannerErrorInfo) {
+                    Log.e(TAG, "Banner failed: ${errorInfo.errorMessage}")
                     _bannerReady.value = false
                     onFailed(errorInfo.errorMessage ?: "Unknown error")
                 }
-
-                override fun onBannerClick(bannerAdView: BannerView) {
-                    Log.d(TAG, "Banner clicked")
-                }
-
-                override fun onBannerLeftApplication(bannerAdView: BannerView) {
-                    Log.d(TAG, "Banner left app")
-                }
-
-                override fun onBannerShown(bannerAdView: BannerView) {
-                    Log.d(TAG, "Banner shown")
-                }
+                override fun onBannerClick(bannerAdView: BannerView)           { Log.d(TAG, "Banner clicked") }
+                override fun onBannerLeftApplication(bannerAdView: BannerView) { Log.d(TAG, "Banner left app") }
+                override fun onBannerShown(bannerAdView: BannerView)           { Log.d(TAG, "Banner shown") }
             }
-
             container.removeAllViews()
             container.addView(bannerView)
             bannerView.load()
-
         } catch (e: Exception) {
             Log.e(TAG, "loadBannerIntoView error: ${e.message}")
             onFailed(e.message ?: "Exception")

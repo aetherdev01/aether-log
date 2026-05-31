@@ -3,6 +3,8 @@ package com.aether.lv.data.repository
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import android.os.Build
+import android.os.ParcelFileDescriptor
 import android.provider.OpenableColumns
 import com.aether.lv.data.db.RecentFileDao
 import com.aether.lv.data.model.RecentFile
@@ -11,6 +13,7 @@ import com.aether.lv.util.GzipUtil
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.withContext
+import java.io.FileInputStream
 
 class FileRepository(
     private val context: Context,
@@ -18,67 +21,56 @@ class FileRepository(
 ) {
     val recentFiles: Flow<List<RecentFile>> = dao.getAllFlow()
 
-    /**
-     * Simpan ke riwayat.
-     *
-     * [activityContext] WAJIB Activity context (bukan Application) agar
-     * takePersistableUriPermission berhasil. Application context tidak punya
-     * grant URI permission dari SAF/ACTION_VIEW.
-     */
     suspend fun saveRecent(
         uri            : Uri,
         lineCount      : Int = 0,
         activityContext: Context? = null
     ) = withContext(Dispatchers.IO) {
-        // Selalu pakai activityContext untuk persistable permission
         val ctx = activityContext ?: context
 
         val isPersisted = when (uri.scheme) {
             "content" -> {
-                // Cek apakah sudah punya persistent permission
-                val already = ctx.contentResolver.persistedUriPermissions.any { perm ->
-                    perm.uri == uri && perm.isReadPermission
-                }
-                if (already) {
-                    true
-                } else {
+                val already = try {
+                    ctx.contentResolver.persistedUriPermissions.any { it.uri == uri && it.isReadPermission }
+                } catch (_: Exception) { false }
+
+                if (already) true
+                else {
                     try {
                         ctx.contentResolver.takePersistableUriPermission(
                             uri, Intent.FLAG_GRANT_READ_URI_PERMISSION
                         )
                         true
-                    } catch (_: SecurityException) {
-                        // URI dari file manager eksternal tidak support persistable — OK
-                        false
-                    }
+                    } catch (_: SecurityException) { false }
                 }
             }
-            "file" -> true  // file:// selalu bisa dibaca kalau ada permission filesystem
+            "file" -> true
             else   -> false
         }
 
         val info = queryFileInfo(uri, ctx)
         val ext  = FileTypeUtil.extensionOf(info.name)
-        dao.upsert(
-            RecentFile(
-                path         = uri.toString(),
-                displayName  = info.name,
-                fileType     = ext.ifBlank { "log" },
-                sizeBytes    = info.size,
-                lastOpenedAt = System.currentTimeMillis(),
-                lineCount    = lineCount,
-                isPersisted  = isPersisted
-            )
-        )
+        dao.upsert(RecentFile(
+            path         = uri.toString(),
+            displayName  = info.name,
+            fileType     = ext.ifBlank { "log" },
+            sizeBytes    = info.size,
+            lastOpenedAt = System.currentTimeMillis(),
+            lineCount    = lineCount,
+            isPersisted  = isPersisted
+        ))
     }
 
     suspend fun removeRecent(path: String) = dao.deleteByPath(path)
     suspend fun clearHistory()             = dao.clearAll()
 
     /**
-     * Baca baris dari URI.
+     * Baca baris file dari URI.
      *
-     * [activityContext] WAJIB Activity context untuk URI dari SAF / ACTION_VIEW.
+     * Strategi baca (prioritas urutan):
+     * 1. file:// → FileInputStream langsung
+     * 2. content:// via openFileDescriptor (lebih andal di Android 13+/Samsung)
+     * 3. Fallback path langsung dari URI jika #2 gagal
      */
     suspend fun readLines(
         uri            : Uri,
@@ -86,7 +78,7 @@ class FileRepository(
         activityContext: Context? = null
     ): Result<List<String>> = withContext(Dispatchers.IO) {
 
-        // file:// → baca langsung via File
+        // ── 1. file:// ────────────────────────────────────────────────────
         if (uri.scheme == "file") {
             val path = uri.path ?: return@withContext Result.failure(
                 IllegalStateException("Path file tidak valid.")
@@ -94,16 +86,14 @@ class FileRepository(
             return@withContext readFromFile(path, maxLines)
         }
 
-        // Untuk content:// — gunakan activityContext dulu, fallback ke application context
-        // CATATAN: Application context TIDAK bisa buka URI dari SAF/ACTION_VIEW yang belum
-        // di-persist. Selalu teruskan Activity context dari caller.
+        // Gunakan Activity context jika ada — satu-satunya yang punya URI grant
         val ctx = activityContext ?: context
 
-        // Test buka stream dulu untuk tangkap error awal
-        try {
-            ctx.contentResolver.openInputStream(uri)?.close()
+        // ── 2. openFileDescriptor — lebih andal dari openInputStream di Samsung ──
+        val pfd: ParcelFileDescriptor? = try {
+            ctx.contentResolver.openFileDescriptor(uri, "r")
         } catch (e: SecurityException) {
-            // Coba fallback path langsung (beberapa file manager kirim URI dengan path)
+            // Coba fallback path jika URI punya path filesystem
             val path = uri.path
             if (path != null && java.io.File(path).exists()) {
                 return@withContext readFromFile(path, maxLines)
@@ -115,45 +105,43 @@ class FileRepository(
                 )
             )
         } catch (e: Exception) {
-            return@withContext Result.failure(
-                IllegalStateException("Tidak dapat membuka file: ${e.message}")
-            )
+            return@withContext Result.failure(IllegalStateException("Tidak dapat membuka file: ${e.message}"))
         }
 
-        // Baca dengan UTF-8, fallback ISO-8859-1
+        if (pfd == null) {
+            return@withContext Result.failure(IllegalStateException("Tidak dapat membuka file descriptor."))
+        }
+
+        // ── 3. Baca dari file descriptor ─────────────────────────────────
         val result = runCatching {
-            val raw    = ctx.contentResolver.openInputStream(uri)
-                ?: return@runCatching Result.failure<List<String>>(
-                    IllegalStateException("Stream null — file tidak dapat dibuka.")
-                )
-            val stream = GzipUtil.wrapIfNeeded(raw)
-            stream.bufferedReader(Charsets.UTF_8).use { reader ->
-                buildLineList(reader, maxLines)
+            FileInputStream(pfd.fileDescriptor).use { fis ->
+                val stream = GzipUtil.wrapIfNeeded(fis)
+                stream.bufferedReader(Charsets.UTF_8).use { buildLineList(it, maxLines) }
             }
+        }.also {
+            // Tutup PFD di luar runCatching agar tidak leak
+            try { pfd.close() } catch (_: Exception) { }
         }.getOrElse { e ->
             if (e is SecurityException) return@withContext Result.failure(e)
-            Result.failure(e)
+            // Fallback ISO-8859-1
+            try {
+                val pfd2 = ctx.contentResolver.openFileDescriptor(uri, "r")
+                    ?: return@withContext Result.failure(IllegalStateException("Tidak dapat membuka file."))
+                FileInputStream(pfd2.fileDescriptor).use { fis ->
+                    val stream = GzipUtil.wrapIfNeeded(fis)
+                    stream.bufferedReader(Charsets.ISO_8859_1).use { buildLineList(it, maxLines) }
+                }.also { try { pfd2.close() } catch (_: Exception) { } }
+            } catch (e2: Exception) {
+                Result.failure(e2)
+            }
         }
 
-        if (result.isFailure) {
-            runCatching {
-                val raw2   = ctx.contentResolver.openInputStream(uri)
-                    ?: return@runCatching Result.failure(IllegalStateException("Tidak dapat membuka file."))
-                val stream2 = GzipUtil.wrapIfNeeded(raw2)
-                stream2.bufferedReader(Charsets.ISO_8859_1).use { reader ->
-                    buildLineList(reader, maxLines)
-                }
-            }.getOrElse { e ->
-                if (e is SecurityException) Result.failure(e) else Result.failure(e)
-            }
-        } else {
-            result
-        }
+        result
     }
 
     fun isUriAccessible(uri: Uri): Boolean {
         return try {
-            context.contentResolver.openInputStream(uri)?.use { true } ?: false
+            context.contentResolver.openFileDescriptor(uri, "r")?.use { true } ?: false
         } catch (_: Exception) { false }
     }
 
@@ -165,8 +153,6 @@ class FileRepository(
             if (!isUriAccessible(uri)) dao.deleteByPath(file.path)
         }
     }
-
-    // ── Private helpers ────────────────────────────────────────────────────
 
     private fun buildLineList(reader: java.io.BufferedReader, maxLines: Int): Result<List<String>> {
         val lines = ArrayList<String>(minOf(maxLines, 2048))
@@ -182,11 +168,8 @@ class FileRepository(
     private fun readFromFile(path: String, maxLines: Int): Result<List<String>> {
         return try {
             val file = java.io.File(path)
-            if (!file.exists()) return Result.failure(
-                java.io.FileNotFoundException("File tidak ditemukan: $path")
-            )
-            GzipUtil.wrapIfNeeded(file.inputStream())
-                .bufferedReader(Charsets.UTF_8)
+            if (!file.exists()) return Result.failure(java.io.FileNotFoundException("File tidak ditemukan: $path"))
+            GzipUtil.wrapIfNeeded(file.inputStream()).bufferedReader(Charsets.UTF_8)
                 .use { buildLineList(it, maxLines) }
         } catch (e: SecurityException) { Result.failure(e) }
         catch (e: java.io.IOException)  { Result.failure(e) }

@@ -1,8 +1,10 @@
 package com.aether.lv.ui.screen
 
+import android.app.Activity
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
+import android.content.ContextWrapper
 import android.content.Intent
 import android.net.Uri
 import android.provider.OpenableColumns
@@ -33,6 +35,16 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.aether.lv.util.ParsedLine
 import kotlinx.coroutines.launch
 
+/** Traverse ContextWrapper chain sampai ketemu Activity */
+fun Context.findActivity(): Activity? {
+    var ctx = this
+    while (ctx is ContextWrapper) {
+        if (ctx is Activity) return ctx
+        ctx = ctx.baseContext
+    }
+    return null
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ViewerScreen(
@@ -44,6 +56,8 @@ fun ViewerScreen(
 ) {
     val state     by vm.state.collectAsStateWithLifecycle()
     val context    = LocalContext.current
+    // Selalu resolve ke Activity nyata — bukan ContextThemeWrapper
+    val activity   = remember(context) { context.findActivity() }
     val listState  = rememberLazyListState()
     val scope      = rememberCoroutineScope()
 
@@ -53,7 +67,9 @@ fun ViewerScreen(
     val fileName = remember(fileUri) {
         if (fileUri == null) return@remember "file.log"
         try {
-            context.contentResolver.query(fileUri, null, null, null, null)?.use { cursor ->
+            // Pakai activity untuk query agar URI dari ACTION_VIEW bisa dibaca
+            val ctx = activity ?: context
+            ctx.contentResolver.query(fileUri, null, null, null, null)?.use { cursor ->
                 val idx = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
                 if (idx >= 0 && cursor.moveToFirst()) cursor.getString(idx) else null
             }
@@ -61,9 +77,9 @@ fun ViewerScreen(
             ?: fileUri.lastPathSegment?.substringAfterLast('/') ?: "file.log"
     }
 
-    // Teruskan Activity context (LocalContext.current) — BUKAN application context
     LaunchedEffect(fileUri) {
-        vm.loadFile(fileUri, fileName, activityContext = context)
+        // Teruskan Activity — bukan context generic dari Compose
+        vm.loadFile(fileUri, fileName, activityContext = activity ?: context)
     }
 
     LaunchedEffect(state.jumpToEnd) {
@@ -96,20 +112,15 @@ fun ViewerScreen(
                                 else
                                     "${state.filteredLines.size} / ${state.totalLines} baris"
                                 val display = if (state.isGzipped) "GZ  ·  $lineInfo" else lineInfo
-                                Text(
-                                    display,
+                                Text(display,
                                     style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
                         }
                     },
                     actions = {
                         IconButton(onClick = { searchExpanded = !searchExpanded }) {
-                            Icon(
-                                if (searchExpanded) Icons.Outlined.SearchOff else Icons.Outlined.Search,
-                                "Cari"
-                            )
+                            Icon(if (searchExpanded) Icons.Outlined.SearchOff else Icons.Outlined.Search, "Cari")
                         }
                         IconButton(onClick = {
                             fileUri?.let { uri ->
@@ -126,93 +137,71 @@ fun ViewerScreen(
                             IconButton(onClick = { showOptionsMenu = true }) {
                                 Icon(Icons.Outlined.MoreVert, "Opsi")
                             }
-                            DropdownMenu(
-                                expanded         = showOptionsMenu,
-                                onDismissRequest = { showOptionsMenu = false }
-                            ) {
+                            DropdownMenu(expanded = showOptionsMenu, onDismissRequest = { showOptionsMenu = false }) {
                                 DropdownMenuItem(
-                                    text        = { Text(if (state.wrapLines) "Nonaktifkan Wrap" else "Aktifkan Wrap") },
+                                    text = { Text(if (state.wrapLines) "Nonaktifkan Wrap" else "Aktifkan Wrap") },
                                     leadingIcon = { Icon(Icons.AutoMirrored.Outlined.WrapText, null) },
-                                    onClick     = { vm.toggleWrap(!state.wrapLines); showOptionsMenu = false }
+                                    onClick = { vm.toggleWrap(!state.wrapLines); showOptionsMenu = false }
                                 )
                                 DropdownMenuItem(
-                                    text        = { Text(if (state.showLineNums) "Sembunyikan No. Baris" else "Tampilkan No. Baris") },
+                                    text = { Text(if (state.showLineNums) "Sembunyikan No. Baris" else "Tampilkan No. Baris") },
                                     leadingIcon = { Icon(Icons.Outlined.Tag, null) },
-                                    onClick     = { vm.toggleLineNums(!state.showLineNums); showOptionsMenu = false }
+                                    onClick = { vm.toggleLineNums(!state.showLineNums); showOptionsMenu = false }
                                 )
                                 DropdownMenuItem(
-                                    text        = { Text(if (state.applyColors) "Nonaktifkan Warna Log" else "Aktifkan Warna Log") },
+                                    text = { Text(if (state.applyColors) "Nonaktifkan Warna Log" else "Aktifkan Warna Log") },
                                     leadingIcon = { Icon(Icons.Outlined.Palette, null) },
-                                    onClick     = { vm.toggleColors(!state.applyColors); showOptionsMenu = false }
+                                    onClick = { vm.toggleColors(!state.applyColors); showOptionsMenu = false }
                                 )
                                 HorizontalDivider()
                                 DropdownMenuItem(
-                                    text        = { Text("Ke Baris Pertama") },
+                                    text = { Text("Ke Baris Pertama") },
                                     leadingIcon = { Icon(Icons.Outlined.VerticalAlignTop, null) },
-                                    onClick     = { scope.launch { listState.scrollToItem(0) }; showOptionsMenu = false }
+                                    onClick = { scope.launch { listState.scrollToItem(0) }; showOptionsMenu = false }
                                 )
                                 DropdownMenuItem(
-                                    text        = { Text("Ke Baris Terakhir") },
+                                    text = { Text("Ke Baris Terakhir") },
                                     leadingIcon = { Icon(Icons.Outlined.VerticalAlignBottom, null) },
-                                    onClick     = { vm.jumpToEnd(); showOptionsMenu = false }
+                                    onClick = { vm.jumpToEnd(); showOptionsMenu = false }
                                 )
                                 HorizontalDivider()
                                 DropdownMenuItem(
-                                    text        = { Text("Salin Semua Teks") },
+                                    text = { Text("Salin Semua Teks") },
                                     leadingIcon = { Icon(Icons.Outlined.ContentCopy, null) },
-                                    onClick     = {
+                                    onClick = {
                                         val clip = state.filteredLines.joinToString("\n") { it.raw }
-                                        val cm   = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                                        val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
                                         cm.setPrimaryClip(ClipData.newPlainText("log", clip))
                                         showOptionsMenu = false
                                     }
                                 )
                                 DropdownMenuItem(
-                                    text        = { Text("Pengaturan") },
+                                    text = { Text("Pengaturan") },
                                     leadingIcon = { Icon(Icons.Outlined.Settings, null) },
-                                    onClick     = { showOptionsMenu = false; onSettings() }
+                                    onClick = { showOptionsMenu = false; onSettings() }
                                 )
                             }
                         }
                     },
-                    colors = TopAppBarDefaults.topAppBarColors(
-                        containerColor = MaterialTheme.colorScheme.surface
-                    )
+                    colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.surface)
                 )
-
-                AnimatedVisibility(
-                    visible = searchExpanded,
-                    enter   = expandVertically() + fadeIn(),
-                    exit    = shrinkVertically() + fadeOut()
-                ) {
-                    SearchBar(
-                        query    = state.searchQuery,
-                        onQuery  = vm::onSearch,
-                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
-                    )
+                AnimatedVisibility(visible = searchExpanded, enter = expandVertically() + fadeIn(), exit = shrinkVertically() + fadeOut()) {
+                    SearchBar(query = state.searchQuery, onQuery = vm::onSearch,
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp))
                 }
                 HorizontalDivider(thickness = 0.5.dp)
             }
         }
     ) { innerPadding ->
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(innerPadding)
-        ) {
+        Box(modifier = Modifier.fillMaxSize().padding(innerPadding)) {
             when {
                 state.isLoading -> {
-                    Column(
-                        modifier            = Modifier.align(Alignment.Center),
+                    Column(modifier = Modifier.align(Alignment.Center),
                         horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.spacedBy(12.dp)
-                    ) {
+                        verticalArrangement = Arrangement.spacedBy(12.dp)) {
                         CircularProgressIndicator()
-                        Text(
-                            "Membaca file…",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
+                        Text("Membaca file…", style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
                 state.error != null -> {
@@ -220,104 +209,62 @@ fun ViewerScreen(
                         message             = state.error!!,
                         errorType           = state.errorType,
                         onRequestPermission = onRequestPermission,
-                        // Teruskan context ke retryLoad agar permission tetap valid
-                        onRetry             = { vm.retryLoad(activityContext = context) },
+                        onRetry             = { vm.retryLoad(activityContext = activity ?: context) },
                         modifier            = Modifier.align(Alignment.Center)
                     )
                 }
                 state.filteredLines.isEmpty() && state.searchQuery.isNotBlank() -> {
-                    Text(
-                        "Tidak ada baris yang cocok dengan \"${state.searchQuery}\"",
-                        modifier  = Modifier.align(Alignment.Center).padding(24.dp),
-                        style     = MaterialTheme.typography.bodyMedium,
-                        color     = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+                    Text("Tidak ada baris yang cocok dengan \"${state.searchQuery}\"",
+                        modifier = Modifier.align(Alignment.Center).padding(24.dp),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
                 state.filteredLines.isEmpty() -> {
-                    Text(
-                        "File kosong",
-                        modifier = Modifier.align(Alignment.Center),
-                        style    = MaterialTheme.typography.bodyMedium,
-                        color    = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+                    Text("File kosong", modifier = Modifier.align(Alignment.Center),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
                 else -> {
-                    LogContent(
-                        lines        = state.filteredLines,
-                        wrapLines    = state.wrapLines,
-                        showLineNums = state.showLineNums,
-                        searchQuery  = state.searchQuery,
-                        listState    = listState
-                    )
+                    LogContent(lines = state.filteredLines, wrapLines = state.wrapLines,
+                        showLineNums = state.showLineNums, searchQuery = state.searchQuery, listState = listState)
                 }
             }
-
             if (!state.isLoading && state.filteredLines.size > 50) {
                 SmallFloatingActionButton(
-                    onClick        = { vm.jumpToEnd() },
-                    modifier       = Modifier.align(Alignment.BottomEnd).padding(16.dp),
+                    onClick = { vm.jumpToEnd() },
+                    modifier = Modifier.align(Alignment.BottomEnd).padding(16.dp),
                     containerColor = MaterialTheme.colorScheme.tertiaryContainer
-                ) {
-                    Icon(Icons.Outlined.KeyboardArrowDown, "Ke Bawah")
-                }
+                ) { Icon(Icons.Outlined.KeyboardArrowDown, "Ke Bawah") }
             }
         }
     }
 }
 
 @Composable
-private fun SearchBar(
-    query   : String,
-    onQuery : (String) -> Unit,
-    modifier: Modifier = Modifier
-) {
-    OutlinedTextField(
-        value         = query,
-        onValueChange = onQuery,
-        modifier      = modifier.fillMaxWidth(),
-        placeholder   = { Text("Cari dalam log…") },
-        leadingIcon   = { Icon(Icons.Outlined.Search, null) },
-        trailingIcon  = {
-            if (query.isNotEmpty()) {
-                IconButton(onClick = { onQuery("") }) {
-                    Icon(Icons.Outlined.Clear, "Hapus pencarian")
-                }
-            }
-        },
-        singleLine = true,
-        shape      = RoundedCornerShape(12.dp)
-    )
+private fun SearchBar(query: String, onQuery: (String) -> Unit, modifier: Modifier = Modifier) {
+    OutlinedTextField(value = query, onValueChange = onQuery, modifier = modifier.fillMaxWidth(),
+        placeholder = { Text("Cari dalam log…") },
+        leadingIcon = { Icon(Icons.Outlined.Search, null) },
+        trailingIcon = { if (query.isNotEmpty()) IconButton(onClick = { onQuery("") }) { Icon(Icons.Outlined.Clear, "Hapus") } },
+        singleLine = true, shape = RoundedCornerShape(12.dp))
 }
 
 @Composable
-private fun LogContent(
-    lines       : List<ParsedLine>,
-    wrapLines   : Boolean,
-    showLineNums: Boolean,
-    searchQuery  : String,
-    listState   : LazyListState,
-    modifier    : Modifier = Modifier
-) {
+private fun LogContent(lines: List<ParsedLine>, wrapLines: Boolean, showLineNums: Boolean,
+                       searchQuery: String, listState: LazyListState, modifier: Modifier = Modifier) {
     SelectionContainer {
         if (wrapLines) {
-            LazyColumn(
-                state          = listState,
-                modifier       = modifier.fillMaxSize(),
-                contentPadding = PaddingValues(vertical = 4.dp)
-            ) {
-                itemsIndexed(items = lines, key = { index, _ -> index }) { index, pl ->
-                    LogLine(index + 1, pl, true, showLineNums, searchQuery)
+            LazyColumn(state = listState, modifier = modifier.fillMaxSize(), contentPadding = PaddingValues(vertical = 4.dp)) {
+                itemsIndexed(items = lines, key = { i, _ -> i }) { i, pl ->
+                    LogLine(i + 1, pl, true, showLineNums, searchQuery)
                 }
             }
         } else {
             val hScroll = rememberScrollState()
-            LazyColumn(
-                state          = listState,
-                modifier       = modifier.fillMaxSize().horizontalScroll(hScroll),
-                contentPadding = PaddingValues(vertical = 4.dp)
-            ) {
-                itemsIndexed(items = lines, key = { index, _ -> index }) { index, pl ->
-                    LogLine(index + 1, pl, false, showLineNums, searchQuery)
+            LazyColumn(state = listState, modifier = modifier.fillMaxSize().horizontalScroll(hScroll),
+                contentPadding = PaddingValues(vertical = 4.dp)) {
+                itemsIndexed(items = lines, key = { i, _ -> i }) { i, pl ->
+                    LogLine(i + 1, pl, false, showLineNums, searchQuery)
                 }
             }
         }
@@ -325,117 +272,60 @@ private fun LogContent(
 }
 
 @Composable
-private fun LogLine(
-    lineNumber : Int,
-    parsed     : ParsedLine,
-    wrapLines  : Boolean,
-    showLineNum: Boolean,
-    searchQuery : String
-) {
-    Row(
-        modifier          = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 1.dp),
-        verticalAlignment = Alignment.Top
-    ) {
+private fun LogLine(lineNumber: Int, parsed: ParsedLine, wrapLines: Boolean, showLineNum: Boolean, searchQuery: String) {
+    Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 1.dp), verticalAlignment = Alignment.Top) {
         if (showLineNum) {
-            Text(
-                text       = "%5d".format(lineNumber),
-                style      = MaterialTheme.typography.bodySmall.copy(fontSize = 11.sp),
-                color      = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
-                fontFamily = FontFamily.Monospace,
-                modifier   = Modifier.width(40.dp).padding(end = 6.dp)
-            )
+            Text("%5d".format(lineNumber), style = MaterialTheme.typography.bodySmall.copy(fontSize = 11.sp),
+                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
+                fontFamily = FontFamily.Monospace, modifier = Modifier.width(40.dp).padding(end = 6.dp))
         }
-
         val annotated = remember(parsed.raw, parsed.color, searchQuery) {
             buildAnnotatedString {
                 if (searchQuery.isNotBlank()) {
-                    val raw   = parsed.raw
-                    var start = 0
-                    val lower = raw.lowercase()
-                    val qLow  = searchQuery.lowercase()
+                    val raw = parsed.raw; var start = 0
+                    val lower = raw.lowercase(); val qLow = searchQuery.lowercase()
                     while (true) {
                         val idx = lower.indexOf(qLow, start)
-                        if (idx < 0) {
-                            withStyle(SpanStyle(color = parsed.color)) { append(raw.substring(start)) }
-                            break
-                        }
+                        if (idx < 0) { withStyle(SpanStyle(color = parsed.color)) { append(raw.substring(start)) }; break }
                         withStyle(SpanStyle(color = parsed.color)) { append(raw.substring(start, idx)) }
-                        withStyle(SpanStyle(
-                            background = androidx.compose.ui.graphics.Color(0x4D6200EE),
-                            color      = parsed.color
-                        )) { append(raw.substring(idx, idx + searchQuery.length)) }
+                        withStyle(SpanStyle(background = androidx.compose.ui.graphics.Color(0x4D6200EE), color = parsed.color)) { append(raw.substring(idx, idx + searchQuery.length)) }
                         start = idx + searchQuery.length
                     }
-                } else {
-                    withStyle(SpanStyle(color = parsed.color)) { append(parsed.raw) }
-                }
+                } else { withStyle(SpanStyle(color = parsed.color)) { append(parsed.raw) } }
             }
         }
-
-        Text(
-            text       = annotated,
-            style      = MaterialTheme.typography.bodySmall,
-            fontFamily = FontFamily.Monospace,
-            maxLines   = if (wrapLines) Int.MAX_VALUE else 1,
-            overflow   = if (wrapLines) TextOverflow.Clip else TextOverflow.Visible
-        )
+        Text(text = annotated, style = MaterialTheme.typography.bodySmall, fontFamily = FontFamily.Monospace,
+            maxLines = if (wrapLines) Int.MAX_VALUE else 1, overflow = if (wrapLines) TextOverflow.Clip else TextOverflow.Visible)
     }
 }
 
 @Composable
-private fun ErrorState(
-    message             : String,
-    errorType           : FileErrorType? = null,
-    onRequestPermission : () -> Unit = {},
-    onRetry             : () -> Unit = {},
-    modifier            : Modifier = Modifier
-) {
+private fun ErrorState(message: String, errorType: FileErrorType? = null,
+                       onRequestPermission: () -> Unit = {}, onRetry: () -> Unit = {}, modifier: Modifier = Modifier) {
     val isPermissionError = errorType == FileErrorType.PERMISSION
-
-    Column(
-        modifier            = modifier.padding(24.dp),
-        horizontalAlignment = Alignment.CenterHorizontally
-    ) {
-        Icon(
-            if (isPermissionError) Icons.Outlined.LockOpen else Icons.Outlined.ErrorOutline,
-            null,
+    Column(modifier = modifier.padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+        Icon(if (isPermissionError) Icons.Outlined.LockOpen else Icons.Outlined.ErrorOutline, null,
             modifier = Modifier.size(48.dp),
-            tint     = if (isPermissionError) MaterialTheme.colorScheme.primary
-                       else MaterialTheme.colorScheme.error
-        )
+            tint = if (isPermissionError) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error)
         Spacer(Modifier.height(12.dp))
-        Text(
-            if (isPermissionError) "Izin Akses Diperlukan" else "Gagal Membaca File",
+        Text(if (isPermissionError) "Izin Akses Diperlukan" else "Gagal Membaca File",
             style = MaterialTheme.typography.titleMedium,
-            color = if (isPermissionError) MaterialTheme.colorScheme.primary
-                    else MaterialTheme.colorScheme.error
-        )
+            color = if (isPermissionError) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error)
         Spacer(Modifier.height(6.dp))
-        Text(
-            message,
-            style     = MaterialTheme.typography.bodySmall,
-            color     = MaterialTheme.colorScheme.onSurfaceVariant,
-            textAlign = androidx.compose.ui.text.style.TextAlign.Center
-        )
+        Text(message, style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            textAlign = androidx.compose.ui.text.style.TextAlign.Center)
         Spacer(Modifier.height(16.dp))
         if (isPermissionError) {
             Button(onClick = onRequestPermission) {
                 Icon(Icons.Outlined.LockOpen, null, modifier = Modifier.size(16.dp))
-                Spacer(Modifier.width(6.dp))
-                Text("Izinkan Akses Storage")
+                Spacer(Modifier.width(6.dp)); Text("Izinkan Akses Storage")
             }
             Spacer(Modifier.height(8.dp))
-            OutlinedButton(onClick = onRetry) {
-                Icon(Icons.Outlined.Refresh, null, modifier = Modifier.size(16.dp))
-                Spacer(Modifier.width(6.dp))
-                Text("Coba Lagi")
-            }
-        } else {
-            OutlinedButton(onClick = onRetry) {
-                Icon(Icons.Outlined.Refresh, null, modifier = Modifier.size(16.dp))
-                Spacer(Modifier.width(6.dp))
-                Text("Coba Lagi")
-            }
+        }
+        OutlinedButton(onClick = onRetry) {
+            Icon(Icons.Outlined.Refresh, null, modifier = Modifier.size(16.dp))
+            Spacer(Modifier.width(6.dp)); Text("Coba Lagi")
         }
     }
 }
