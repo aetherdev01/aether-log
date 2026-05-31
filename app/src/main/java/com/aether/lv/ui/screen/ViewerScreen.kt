@@ -42,15 +42,14 @@ fun ViewerScreen(
     onRequestPermission : () -> Unit = {},
     vm                  : ViewerViewModel = viewModel()
 ) {
-    val state   by vm.state.collectAsStateWithLifecycle()
-    val context  = LocalContext.current
-    val listState = rememberLazyListState()
-    val scope    = rememberCoroutineScope()
+    val state     by vm.state.collectAsStateWithLifecycle()
+    val context    = LocalContext.current
+    val listState  = rememberLazyListState()
+    val scope      = rememberCoroutineScope()
 
-    var searchExpanded by remember { mutableStateOf(false) }
+    var searchExpanded  by remember { mutableStateOf(false) }
     var showOptionsMenu by remember { mutableStateOf(false) }
 
-    // Resolve nama file yang proper dari ContentResolver
     val fileName = remember(fileUri) {
         if (fileUri == null) return@remember "file.log"
         try {
@@ -62,11 +61,11 @@ fun ViewerScreen(
             ?: fileUri.lastPathSegment?.substringAfterLast('/') ?: "file.log"
     }
 
-    // Load saat compose pertama kali — kirim Activity context agar URI dari ACTION_VIEW
-    // bisa dibaca (grant permission ACTION_VIEW hanya berlaku pada Activity context).
-    LaunchedEffect(fileUri) { vm.loadFile(fileUri, fileName, callerContext = context) }
+    // Teruskan Activity context (LocalContext.current) — BUKAN application context
+    LaunchedEffect(fileUri) {
+        vm.loadFile(fileUri, fileName, activityContext = context)
+    }
 
-    // Handle jump to end trigger
     LaunchedEffect(state.jumpToEnd) {
         if (state.jumpToEnd && state.filteredLines.isNotEmpty()) {
             listState.animateScrollToItem(state.filteredLines.size - 1)
@@ -106,18 +105,16 @@ fun ViewerScreen(
                         }
                     },
                     actions = {
-                        // Search
                         IconButton(onClick = { searchExpanded = !searchExpanded }) {
                             Icon(
                                 if (searchExpanded) Icons.Outlined.SearchOff else Icons.Outlined.Search,
                                 "Cari"
                             )
                         }
-                        // Share
                         IconButton(onClick = {
                             fileUri?.let { uri ->
                                 val intent = Intent(Intent.ACTION_SEND).apply {
-                                    type    = "text/plain"
+                                    type = "text/plain"
                                     putExtra(Intent.EXTRA_STREAM, uri)
                                     addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                                 }
@@ -125,83 +122,55 @@ fun ViewerScreen(
                             }
                         }) { Icon(Icons.Outlined.Share, "Bagikan") }
 
-                        // More options
                         Box {
                             IconButton(onClick = { showOptionsMenu = true }) {
                                 Icon(Icons.Outlined.MoreVert, "Opsi")
                             }
                             DropdownMenu(
-                                expanded        = showOptionsMenu,
+                                expanded         = showOptionsMenu,
                                 onDismissRequest = { showOptionsMenu = false }
                             ) {
-                                // Wrap lines toggle
                                 DropdownMenuItem(
-                                    text = { Text(if (state.wrapLines) "Nonaktifkan Wrap" else "Aktifkan Wrap") },
-                                    leadingIcon = {
-                                        Icon(Icons.AutoMirrored.Outlined.WrapText, null)
-                                    },
-                                    onClick = {
-                                        vm.toggleWrap(!state.wrapLines)
-                                        showOptionsMenu = false
-                                    }
+                                    text        = { Text(if (state.wrapLines) "Nonaktifkan Wrap" else "Aktifkan Wrap") },
+                                    leadingIcon = { Icon(Icons.AutoMirrored.Outlined.WrapText, null) },
+                                    onClick     = { vm.toggleWrap(!state.wrapLines); showOptionsMenu = false }
                                 )
-                                // Line numbers toggle
                                 DropdownMenuItem(
-                                    text = { Text(if (state.showLineNums) "Sembunyikan No. Baris" else "Tampilkan No. Baris") },
+                                    text        = { Text(if (state.showLineNums) "Sembunyikan No. Baris" else "Tampilkan No. Baris") },
                                     leadingIcon = { Icon(Icons.Outlined.Tag, null) },
-                                    onClick = {
-                                        vm.toggleLineNums(!state.showLineNums)
-                                        showOptionsMenu = false
-                                    }
+                                    onClick     = { vm.toggleLineNums(!state.showLineNums); showOptionsMenu = false }
                                 )
-                                // Color highlight toggle
                                 DropdownMenuItem(
-                                    text = { Text(if (state.applyColors) "Nonaktifkan Warna Log" else "Aktifkan Warna Log") },
+                                    text        = { Text(if (state.applyColors) "Nonaktifkan Warna Log" else "Aktifkan Warna Log") },
                                     leadingIcon = { Icon(Icons.Outlined.Palette, null) },
-                                    onClick = {
-                                        vm.toggleColors(!state.applyColors)
-                                        showOptionsMenu = false
-                                    }
+                                    onClick     = { vm.toggleColors(!state.applyColors); showOptionsMenu = false }
                                 )
                                 HorizontalDivider()
-                                // Jump to start
                                 DropdownMenuItem(
-                                    text = { Text("Ke Baris Pertama") },
+                                    text        = { Text("Ke Baris Pertama") },
                                     leadingIcon = { Icon(Icons.Outlined.VerticalAlignTop, null) },
-                                    onClick = {
-                                        scope.launch { listState.scrollToItem(0) }
-                                        showOptionsMenu = false
-                                    }
+                                    onClick     = { scope.launch { listState.scrollToItem(0) }; showOptionsMenu = false }
                                 )
-                                // Jump to end
                                 DropdownMenuItem(
-                                    text = { Text("Ke Baris Terakhir") },
+                                    text        = { Text("Ke Baris Terakhir") },
                                     leadingIcon = { Icon(Icons.Outlined.VerticalAlignBottom, null) },
-                                    onClick = {
-                                        vm.jumpToEnd()
-                                        showOptionsMenu = false
-                                    }
+                                    onClick     = { vm.jumpToEnd(); showOptionsMenu = false }
                                 )
                                 HorizontalDivider()
-                                // Copy all
                                 DropdownMenuItem(
-                                    text = { Text("Salin Semua Teks") },
+                                    text        = { Text("Salin Semua Teks") },
                                     leadingIcon = { Icon(Icons.Outlined.ContentCopy, null) },
-                                    onClick = {
+                                    onClick     = {
                                         val clip = state.filteredLines.joinToString("\n") { it.raw }
                                         val cm   = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
                                         cm.setPrimaryClip(ClipData.newPlainText("log", clip))
                                         showOptionsMenu = false
                                     }
                                 )
-                                // Settings
                                 DropdownMenuItem(
-                                    text = { Text("Pengaturan") },
+                                    text        = { Text("Pengaturan") },
                                     leadingIcon = { Icon(Icons.Outlined.Settings, null) },
-                                    onClick = {
-                                        showOptionsMenu = false
-                                        onSettings()
-                                    }
+                                    onClick     = { showOptionsMenu = false; onSettings() }
                                 )
                             }
                         }
@@ -211,7 +180,6 @@ fun ViewerScreen(
                     )
                 )
 
-                // Search bar
                 AnimatedVisibility(
                     visible = searchExpanded,
                     enter   = expandVertically() + fadeIn(),
@@ -223,7 +191,6 @@ fun ViewerScreen(
                         modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
                     )
                 }
-
                 HorizontalDivider(thickness = 0.5.dp)
             }
         }
@@ -236,7 +203,7 @@ fun ViewerScreen(
             when {
                 state.isLoading -> {
                     Column(
-                        modifier = Modifier.align(Alignment.Center),
+                        modifier            = Modifier.align(Alignment.Center),
                         horizontalAlignment = Alignment.CenterHorizontally,
                         verticalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
@@ -253,26 +220,25 @@ fun ViewerScreen(
                         message             = state.error!!,
                         errorType           = state.errorType,
                         onRequestPermission = onRequestPermission,
-                        onRetry             = { vm.retryLoad(callerContext = context) },
+                        // Teruskan context ke retryLoad agar permission tetap valid
+                        onRetry             = { vm.retryLoad(activityContext = context) },
                         modifier            = Modifier.align(Alignment.Center)
                     )
                 }
                 state.filteredLines.isEmpty() && state.searchQuery.isNotBlank() -> {
                     Text(
                         "Tidak ada baris yang cocok dengan \"${state.searchQuery}\"",
-                        modifier = Modifier
-                            .align(Alignment.Center)
-                            .padding(24.dp),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        modifier  = Modifier.align(Alignment.Center).padding(24.dp),
+                        style     = MaterialTheme.typography.bodyMedium,
+                        color     = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
                 state.filteredLines.isEmpty() -> {
                     Text(
                         "File kosong",
                         modifier = Modifier.align(Alignment.Center),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        style    = MaterialTheme.typography.bodyMedium,
+                        color    = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
                 else -> {
@@ -286,13 +252,10 @@ fun ViewerScreen(
                 }
             }
 
-            // FAB scroll to end — tampil hanya saat ada banyak baris dan bukan loading
             if (!state.isLoading && state.filteredLines.size > 50) {
                 SmallFloatingActionButton(
-                    onClick   = { vm.jumpToEnd() },
-                    modifier  = Modifier
-                        .align(Alignment.BottomEnd)
-                        .padding(16.dp),
+                    onClick        = { vm.jumpToEnd() },
+                    modifier       = Modifier.align(Alignment.BottomEnd).padding(16.dp),
                     containerColor = MaterialTheme.colorScheme.tertiaryContainer
                 ) {
                     Icon(Icons.Outlined.KeyboardArrowDown, "Ke Bawah")
@@ -321,8 +284,8 @@ private fun SearchBar(
                 }
             }
         },
-        singleLine    = true,
-        shape         = RoundedCornerShape(12.dp)
+        singleLine = true,
+        shape      = RoundedCornerShape(12.dp)
     )
 }
 
@@ -342,40 +305,19 @@ private fun LogContent(
                 modifier       = modifier.fillMaxSize(),
                 contentPadding = PaddingValues(vertical = 4.dp)
             ) {
-                itemsIndexed(
-                    items = lines,
-                    key   = { index, _ -> index }
-                ) { index, pl ->
-                    LogLine(
-                        lineNumber  = index + 1,
-                        parsed      = pl,
-                        wrapLines   = true,
-                        showLineNum = showLineNums,
-                        searchQuery  = searchQuery
-                    )
+                itemsIndexed(items = lines, key = { index, _ -> index }) { index, pl ->
+                    LogLine(index + 1, pl, true, showLineNums, searchQuery)
                 }
             }
         } else {
-            // Horizontal scroll untuk mode no-wrap
             val hScroll = rememberScrollState()
             LazyColumn(
                 state          = listState,
-                modifier       = modifier
-                    .fillMaxSize()
-                    .horizontalScroll(hScroll),
+                modifier       = modifier.fillMaxSize().horizontalScroll(hScroll),
                 contentPadding = PaddingValues(vertical = 4.dp)
             ) {
-                itemsIndexed(
-                    items = lines,
-                    key   = { index, _ -> index }
-                ) { index, pl ->
-                    LogLine(
-                        lineNumber  = index + 1,
-                        parsed      = pl,
-                        wrapLines   = false,
-                        showLineNum = showLineNums,
-                        searchQuery  = searchQuery
-                    )
+                itemsIndexed(items = lines, key = { index, _ -> index }) { index, pl ->
+                    LogLine(index + 1, pl, false, showLineNums, searchQuery)
                 }
             }
         }
@@ -391,20 +333,16 @@ private fun LogLine(
     searchQuery : String
 ) {
     Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 8.dp, vertical = 1.dp),
+        modifier          = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 1.dp),
         verticalAlignment = Alignment.Top
     ) {
         if (showLineNum) {
             Text(
-                text  = "%5d".format(lineNumber),
-                style = MaterialTheme.typography.bodySmall.copy(fontSize = 11.sp),
-                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
+                text       = "%5d".format(lineNumber),
+                style      = MaterialTheme.typography.bodySmall.copy(fontSize = 11.sp),
+                color      = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
                 fontFamily = FontFamily.Monospace,
-                modifier = Modifier
-                    .width(40.dp)
-                    .padding(end = 6.dp)
+                modifier   = Modifier.width(40.dp).padding(end = 6.dp)
             )
         }
 
@@ -422,7 +360,6 @@ private fun LogLine(
                             break
                         }
                         withStyle(SpanStyle(color = parsed.color)) { append(raw.substring(start, idx)) }
-                        // Note: background color harus di-hardcode karena remember tidak bisa akses MaterialTheme
                         withStyle(SpanStyle(
                             background = androidx.compose.ui.graphics.Color(0x4D6200EE),
                             color      = parsed.color
@@ -436,11 +373,11 @@ private fun LogLine(
         }
 
         Text(
-            text     = annotated,
-            style    = MaterialTheme.typography.bodySmall,
+            text       = annotated,
+            style      = MaterialTheme.typography.bodySmall,
             fontFamily = FontFamily.Monospace,
-            maxLines = if (wrapLines) Int.MAX_VALUE else 1,
-            overflow = if (wrapLines) TextOverflow.Clip else TextOverflow.Visible
+            maxLines   = if (wrapLines) Int.MAX_VALUE else 1,
+            overflow   = if (wrapLines) TextOverflow.Clip else TextOverflow.Visible
         )
     }
 }
@@ -463,19 +400,15 @@ private fun ErrorState(
             if (isPermissionError) Icons.Outlined.LockOpen else Icons.Outlined.ErrorOutline,
             null,
             modifier = Modifier.size(48.dp),
-            tint     = if (isPermissionError)
-                MaterialTheme.colorScheme.primary
-            else
-                MaterialTheme.colorScheme.error
+            tint     = if (isPermissionError) MaterialTheme.colorScheme.primary
+                       else MaterialTheme.colorScheme.error
         )
         Spacer(Modifier.height(12.dp))
         Text(
             if (isPermissionError) "Izin Akses Diperlukan" else "Gagal Membaca File",
             style = MaterialTheme.typography.titleMedium,
-            color = if (isPermissionError)
-                MaterialTheme.colorScheme.primary
-            else
-                MaterialTheme.colorScheme.error
+            color = if (isPermissionError) MaterialTheme.colorScheme.primary
+                    else MaterialTheme.colorScheme.error
         )
         Spacer(Modifier.height(6.dp))
         Text(
@@ -486,31 +419,20 @@ private fun ErrorState(
         )
         Spacer(Modifier.height(16.dp))
         if (isPermissionError) {
-            // Tombol izin storage
             Button(onClick = onRequestPermission) {
-                Icon(
-                    Icons.Outlined.LockOpen, null,
-                    modifier = Modifier.size(16.dp)
-                )
+                Icon(Icons.Outlined.LockOpen, null, modifier = Modifier.size(16.dp))
                 Spacer(Modifier.width(6.dp))
                 Text("Izinkan Akses Storage")
             }
             Spacer(Modifier.height(8.dp))
-            // Tombol retry setelah izin diberikan
             OutlinedButton(onClick = onRetry) {
-                Icon(
-                    Icons.Outlined.Refresh, null,
-                    modifier = Modifier.size(16.dp)
-                )
+                Icon(Icons.Outlined.Refresh, null, modifier = Modifier.size(16.dp))
                 Spacer(Modifier.width(6.dp))
                 Text("Coba Lagi")
             }
         } else {
             OutlinedButton(onClick = onRetry) {
-                Icon(
-                    Icons.Outlined.Refresh, null,
-                    modifier = Modifier.size(16.dp)
-                )
+                Icon(Icons.Outlined.Refresh, null, modifier = Modifier.size(16.dp))
                 Spacer(Modifier.width(6.dp))
                 Text("Coba Lagi")
             }

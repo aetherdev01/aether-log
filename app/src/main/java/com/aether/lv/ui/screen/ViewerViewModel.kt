@@ -13,13 +13,10 @@ import com.aether.lv.util.ParsedLine
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 
-/**
- * Tipe error yang diketahui — membantu UI menentukan action yang tepat.
- */
 enum class FileErrorType {
-    PERMISSION,   // SecurityException — butuh minta ulang izin
-    NOT_FOUND,    // FileNotFoundException — file hilang/dipindah
-    IO,           // IOException — error baca
+    PERMISSION,
+    NOT_FOUND,
+    IO,
     UNKNOWN
 }
 
@@ -28,7 +25,7 @@ data class ViewerUiState(
     val lines        : List<ParsedLine> = emptyList(),
     val filteredLines: List<ParsedLine> = emptyList(),
     val error        : String?          = null,
-    val errorType    : FileErrorType?   = null,   // ← baru: tipe error eksplisit
+    val errorType    : FileErrorType?   = null,
     val fileName     : String           = "",
     val totalLines   : Int              = 0,
     val searchQuery  : String           = "",
@@ -51,7 +48,9 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
     private val _state = MutableStateFlow(ViewerUiState())
     val state: StateFlow<ViewerUiState> = _state.asStateFlow()
 
-    private var loadedUri: Uri? = null
+    private var loadedUri  : Uri?    = null
+    // Simpan activityContext agar retryLoad bisa pakai context yang sama
+    private var savedActivityCtx: android.content.Context? = null
 
     init {
         viewModelScope.launch {
@@ -59,15 +58,12 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                 themePrefs.isWrapLines,
                 themePrefs.showLineNumbers,
                 themePrefs.showLogColors
-            ) { wrap, nums, colors ->
-                Triple(wrap, nums, colors)
-            }.collect { (wrap, nums, colors) ->
+            ) { wrap, nums, colors -> Triple(wrap, nums, colors) }
+            .collect { (wrap, nums, colors) ->
                 _state.update { s ->
-                    val newLines = if (s.lines.isNotEmpty() && colors != s.applyColors) {
+                    val newLines = if (s.lines.isNotEmpty() && colors != s.applyColors)
                         s.lines.map { LogLineParser.parse(it.raw, applyColors = colors) }
-                    } else {
-                        s.lines
-                    }
+                    else s.lines
                     s.copy(
                         wrapLines     = wrap,
                         showLineNums  = nums,
@@ -83,31 +79,35 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
     /**
      * Load file dari URI.
      *
-     * [callerContext] WAJIB diisi dengan Activity context (LocalContext.current dari Compose).
-     * Ini adalah satu-satunya context yang memiliki grant URI permission dari SAF maupun ACTION_VIEW.
-     * Menggunakan Application context akan menyebabkan SecurityException meski URI valid.
+     * [activityContext] WAJIB diisi dengan Activity context (LocalContext.current dari Compose).
+     * Application context tidak memiliki grant URI permission dari SAF / ACTION_VIEW.
      */
-    fun loadFile(uri: Uri?, fileName: String, callerContext: android.content.Context? = null) {
+    fun loadFile(
+        uri            : Uri?,
+        fileName       : String,
+        activityContext: android.content.Context? = null
+    ) {
         if (uri == null) {
             _state.update { it.copy(isLoading = false, error = "File tidak ditemukan", errorType = FileErrorType.NOT_FOUND) }
             return
         }
-        // Guard rekompose — tapi izinkan retry jika sebelumnya error
         if (uri == loadedUri && _state.value.error == null && !_state.value.isLoading) return
         loadedUri = uri
+        // Simpan activity context untuk retry
+        if (activityContext != null) savedActivityCtx = activityContext
 
         viewModelScope.launch {
             val isGzipped   = fileName.endsWith(".gz", ignoreCase = true)
             val displayName = if (isGzipped) GzipUtil.stripGzSuffix(fileName) else fileName
 
-            _state.update { it.copy(isLoading = true, error = null, errorType = null, fileName = displayName, isGzipped = isGzipped) }
+            _state.update { it.copy(
+                isLoading = true, error = null, errorType = null,
+                fileName  = displayName, isGzipped = isGzipped
+            )}
 
-            // Selalu teruskan callerContext — FileRepository akan memprioritaskannya
-            repo.readLines(uri, callerContext = callerContext).onSuccess { rawLines ->
+            repo.readLines(uri, activityContext = activityContext).onSuccess { rawLines ->
                 val colors = _state.value.applyColors
-                val parsed = rawLines.map { line ->
-                    LogLineParser.parse(line, applyColors = colors)
-                }
+                val parsed = rawLines.map { LogLineParser.parse(it, applyColors = colors) }
                 _state.update { s ->
                     s.copy(
                         isLoading     = false,
@@ -118,7 +118,8 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                         errorType     = null,
                     )
                 }
-                repo.saveRecent(uri, lineCount = rawLines.size, callerContext = callerContext)
+                // Teruskan activityContext agar takePersistableUriPermission berhasil
+                repo.saveRecent(uri, lineCount = rawLines.size, activityContext = activityContext)
             }.onFailure { e ->
                 val (message, errorType) = when (e) {
                     is SecurityException -> Pair(
@@ -133,45 +134,31 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                         "Gagal membaca file: ${e.message ?: "Error I/O tidak diketahui"}",
                         FileErrorType.IO
                     )
-                    else -> Pair(
-                        e.message ?: "Gagal membaca file",
-                        FileErrorType.UNKNOWN
-                    )
+                    else -> Pair(e.message ?: "Gagal membaca file", FileErrorType.UNKNOWN)
                 }
                 _state.update { it.copy(isLoading = false, error = message, errorType = errorType) }
-                loadedUri = null  // reset agar bisa retry
+                loadedUri = null
             }
         }
     }
 
-    /** Retry load dengan URI yang sama — dipanggil setelah user grant permission */
-    fun retryLoad(callerContext: android.content.Context? = null) {
-        val uri = loadedUri ?: return
+    /** Retry — pakai savedActivityCtx agar permission masih valid */
+    fun retryLoad(activityContext: android.content.Context? = null) {
+        val uri  = loadedUri ?: return
         val name = _state.value.fileName
-        loadedUri = null  // reset guard agar loadFile mau jalan
-        loadFile(uri, name, callerContext)
+        loadedUri = null
+        loadFile(uri, name, activityContext ?: savedActivityCtx)
     }
 
     fun onSearch(query: String) {
         _state.update { s ->
-            s.copy(
-                searchQuery   = query,
-                filteredLines = applyFilter(s.lines, query)
-            )
+            s.copy(searchQuery = query, filteredLines = applyFilter(s.lines, query))
         }
     }
 
-    fun toggleColors(enabled: Boolean) {
-        viewModelScope.launch { themePrefs.setShowLogColors(enabled) }
-    }
-
-    fun toggleWrap(enabled: Boolean) {
-        viewModelScope.launch { themePrefs.setWrapLines(enabled) }
-    }
-
-    fun toggleLineNums(enabled: Boolean) {
-        viewModelScope.launch { themePrefs.setShowLineNumbers(enabled) }
-    }
+    fun toggleColors(enabled: Boolean)   { viewModelScope.launch { themePrefs.setShowLogColors(enabled) } }
+    fun toggleWrap(enabled: Boolean)     { viewModelScope.launch { themePrefs.setWrapLines(enabled) } }
+    fun toggleLineNums(enabled: Boolean) { viewModelScope.launch { themePrefs.setShowLineNumbers(enabled) } }
 
     fun jumpToEnd()   { _state.update { it.copy(jumpToEnd = true)  } }
     fun consumeJump() { _state.update { it.copy(jumpToEnd = false) } }
