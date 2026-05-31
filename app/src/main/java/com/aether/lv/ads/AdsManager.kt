@@ -41,7 +41,35 @@ object AdsManager {
 
         // Android 16 / Unity Ads 4.12: gunakan UnityAds.setPrivacyConsent
         // MetaData "gdpr.consent" deprecated di SDK 4.x
-        UnityAds.setPrivacyConsent(true)
+        fun initialize(context: Context, testMode: Boolean = false) {
+    if (_isInitialized.value) return
+
+    Log.d(TAG, "Initializing Unity Ads | gameId=$GAME_ID testMode=$testMode")
+
+    UnityAds.initialize(
+        context,
+        GAME_ID,
+        testMode,
+        object : IUnityAdsInitializationListener {
+            override fun onInitializationComplete() {
+                Log.d(TAG, "Unity Ads initialized OK")
+                _isInitialized.value = true
+                pendingInterstitialActivity?.let {
+                    loadInterstitial(it)
+                    pendingInterstitialActivity = null
+                }
+            }
+            override fun onInitializationFailed(
+                error: UnityAds.UnityAdsInitializationError?,
+                message: String?
+            ) {
+                Log.e(TAG, "Init failed: $error — $message")
+                _isInitialized.value = false
+                pendingInterstitialActivity = null
+            }
+        }
+    )
+}
 
         UnityAds.initialize(
             context,
