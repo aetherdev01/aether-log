@@ -56,8 +56,18 @@ fun ViewerScreen(
 ) {
     val state     by vm.state.collectAsStateWithLifecycle()
     val context    = LocalContext.current
-    // Selalu resolve ke Activity nyata — bukan ContextThemeWrapper
-    val activity   = remember(context) { context.findActivity() }
+
+    // FIX: Gunakan requireNotNull + pesan jelas agar crash saat develop
+    // lebih informatif. Di production, findActivity() seharusnya tidak pernah null
+    // karena ViewerScreen selalu di-host di dalam Activity.
+    val activity = remember(context) {
+        context.findActivity()
+            ?: error(
+                "ViewerScreen harus di-host di dalam Activity. " +
+                "Pastikan LocalContext.current adalah Activity context, bukan Application context."
+            )
+    }
+
     val listState  = rememberLazyListState()
     val scope      = rememberCoroutineScope()
 
@@ -68,8 +78,7 @@ fun ViewerScreen(
         if (fileUri == null) return@remember "file.log"
         try {
             // Pakai activity untuk query agar URI dari ACTION_VIEW bisa dibaca
-            val ctx = activity ?: context
-            ctx.contentResolver.query(fileUri, null, null, null, null)?.use { cursor ->
+            activity.contentResolver.query(fileUri, null, null, null, null)?.use { cursor ->
                 val idx = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
                 if (idx >= 0 && cursor.moveToFirst()) cursor.getString(idx) else null
             }
@@ -78,8 +87,10 @@ fun ViewerScreen(
     }
 
     LaunchedEffect(fileUri) {
-        // Teruskan Activity — bukan context generic dari Compose
-        vm.loadFile(fileUri, fileName, activityContext = activity ?: context)
+        // FIX: Selalu teruskan Activity context — tidak ada fallback ke context biasa.
+        // Application context tidak memiliki URI permission grant dari SAF / ACTION_VIEW,
+        // sehingga contentResolver.openFileDescriptor() akan melempar SecurityException.
+        vm.loadFile(fileUri, fileName, activityContext = activity)
     }
 
     LaunchedEffect(state.jumpToEnd) {
@@ -209,7 +220,9 @@ fun ViewerScreen(
                         message             = state.error!!,
                         errorType           = state.errorType,
                         onRequestPermission = onRequestPermission,
-                        onRetry             = { vm.retryLoad(activityContext = activity ?: context) },
+                        // FIX: Teruskan activity (bukan activity ?: context) agar retry
+                        // juga menggunakan Activity context yang punya URI grant.
+                        onRetry             = { vm.retryLoad(activityContext = activity) },
                         modifier            = Modifier.align(Alignment.Center)
                     )
                 }
