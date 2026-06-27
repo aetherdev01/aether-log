@@ -25,6 +25,7 @@ fun FileTypeIcon(
         FileIconType.ERROR -> Icons.Outlined.ErrorOutline
         FileIconType.OUT   -> Icons.Outlined.Terminal
         FileIconType.LOG   -> Icons.Outlined.Article
+        FileIconType.GZ    -> Icons.Outlined.FolderZip
     }
     Icon(vector, contentDescription = iconType.name, modifier = modifier, tint = tint)
 }

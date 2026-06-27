@@ -1,190 +1,660 @@
 package com.aether.lv.ui.screen
 
+import androidx.compose.animation.*
+import androidx.compose.animation.core.*
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.WrapText
 import androidx.compose.material.icons.outlined.*
 import androidx.compose.material.icons.rounded.ArrowBack
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.viewmodel.compose.viewModel
+import com.aether.lv.BuildConfig
+import com.aether.lv.ads.AdsManager
+import com.aether.lv.ads.RewardedNoAdsManager
 import com.aether.lv.data.preferences.ThemePreferences
+import com.aether.lv.update.UpdateDialog
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SettingsScreen(
-    themePrefs : ThemePreferences,
-    onBack     : () -> Unit
+    themePrefs          : ThemePreferences,
+    onBack              : () -> Unit,
+    onRequestPermission : () -> Unit = {},
+    onShowInterstitial  : (() -> Unit) -> Unit = { it() },
+    onShowRewarded      : () -> Unit = {},
+    homeVm              : HomeViewModel = viewModel()
 ) {
-    val isDark     by themePrefs.isDarkMode.collectAsStateWithLifecycle(false)
-    val isDynamic  by themePrefs.isDynamicColor.collectAsStateWithLifecycle(true)
-    val wrapLines  by themePrefs.isWrapLines.collectAsStateWithLifecycle(false)
-    val showNums   by themePrefs.showLineNumbers.collectAsStateWithLifecycle(true)
-    val showColors by themePrefs.showLogColors.collectAsStateWithLifecycle(true)
+    val isDark      by themePrefs.isDarkMode.collectAsState(initial = false)
+    val isDynamic   by themePrefs.isDynamicColor.collectAsState(initial = true)
+    val wrapLines   by themePrefs.isWrapLines.collectAsState(initial = false)
+    val showNums    by themePrefs.showLineNumbers.collectAsState(initial = true)
+    val showColors  by themePrefs.showLogColors.collectAsState(initial = true)
+    val updateState  by homeVm.updateVm.state.collectAsStateWithLifecycle()
+    val noAdsState   by RewardedNoAdsManager.state.collectAsStateWithLifecycle()
+    val rewardedReady by AdsManager.rewardedReady.collectAsStateWithLifecycle()
+    val scope        = rememberCoroutineScope()
 
-    val scope = rememberCoroutineScope()
+    // Ticker tiap detik untuk countdown real-time
+    var tickMs by remember { mutableLongStateOf(System.currentTimeMillis()) }
+    LaunchedEffect(Unit) {
+        while (true) {
+            delay(1_000)
+            tickMs = System.currentTimeMillis()
+        }
+    }
+    val remainingMs   = (noAdsState.noAdsUntil - tickMs).coerceAtLeast(0L)
+    val isNoAdsActive = remainingMs > 0L
+
+    var toggleCount by remember { mutableIntStateOf(0) }
+
+    fun doToggle(applyPref: () -> Unit) {
+        toggleCount++
+        if (toggleCount % 3 == 0 && AdsManager.interstitialReady.value) {
+            onShowInterstitial { applyPref() }
+        } else {
+            applyPref()
+        }
+    }
+
+    if (updateState.showDialog) {
+        UpdateDialog(
+            state      = updateState,
+            onDismiss  = { homeVm.updateVm.dismissDialog() },
+            onDownload = { homeVm.updateVm.startDownload() },
+            onInstall  = { homeVm.updateVm.install() },
+            onRetry    = { homeVm.updateVm.retryDownload() }
+        )
+    }
 
     Scaffold(
         topBar = {
-            TopAppBar(
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(Icons.Rounded.ArrowBack, "Kembali")
-                    }
-                },
-                title  = { Text("Pengaturan") },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.surface
+            Column {
+                TopAppBar(
+                    navigationIcon = {
+                        IconButton(onClick = onBack) {
+                            Icon(Icons.Rounded.ArrowBack, "Kembali")
+                        }
+                    },
+                    title = {
+                        Text(
+                            "Pengaturan",
+                            fontWeight = FontWeight.SemiBold,
+                            style      = MaterialTheme.typography.titleLarge,
+                        )
+                    },
+                    colors = TopAppBarDefaults.topAppBarColors(
+                        containerColor = MaterialTheme.colorScheme.surface
+                    )
                 )
-            )
+                HorizontalDivider(thickness = 0.5.dp)
+            }
         }
     ) { innerPadding ->
         LazyColumn(
-            modifier       = Modifier
-                .fillMaxSize()
-                .padding(innerPadding),
-            contentPadding = PaddingValues(16.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
+            modifier            = Modifier.fillMaxSize().padding(innerPadding),
+            contentPadding      = PaddingValues(horizontal = 16.dp, vertical = 14.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
         ) {
-            // ── Tema ──────────────────────────────────────────────────────
-            item {
-                SettingGroupLabel("Tampilan & Tema")
-            }
 
+            // ── No Ads Rewarded ─────────────────────────────────────────────
             item {
-                SettingSwitch(
-                    title    = "Mode Gelap",
-                    subtitle = "Gunakan tema gelap",
-                    icon     = if (isDark) Icons.Outlined.DarkMode else Icons.Outlined.LightMode,
-                    checked  = isDark,
-                    onCheckedChange = { scope.launch { themePrefs.setDarkMode(it) } }
+                NoAdsRewardedCard(
+                    isActive       = isNoAdsActive,
+                    remainingMs    = remainingMs,
+                    remainingClaims = noAdsState.remainingClaims,
+                    canWatch       = noAdsState.canWatchRewarded,
+                    rewardedReady  = rewardedReady,
+                    onWatch        = onShowRewarded,
                 )
             }
 
+            item { Spacer(Modifier.height(6.dp)) }
+
+            // ── Tampilan ────────────────────────────────────────────────────
+            item { SectionLabel("Tampilan") }
             item {
-                SettingSwitch(
-                    title    = "Material You",
-                    subtitle = "Warna dinamis dari wallpaper (Android 12+)",
-                    icon     = Icons.Outlined.Palette,
-                    checked  = isDynamic,
-                    onCheckedChange = { scope.launch { themePrefs.setDynamicColor(it) } }
+                SettingsCard {
+                    val modeIcon = if (isDark) Icons.Outlined.DarkMode else Icons.Outlined.LightMode
+                    val modeTint = if (isDark) Color(0xFF9FA8DA) else Color(0xFFFFA726)
+                    SettingsToggleItem(
+                        icon      = modeIcon,
+                        iconTint  = modeTint,
+                        title     = "Mode Gelap",
+                        subtitle  = if (isDark) "Tema gelap aktif" else "Tema terang aktif",
+                        checked   = isDark,
+                        onChecked = { v -> doToggle { scope.launch { themePrefs.setDarkMode(v) } } },
+                        isFirst   = true,
+                        isLast    = false,
+                    )
+                    RowDivider()
+                    SettingsToggleItem(
+                        icon      = Icons.Outlined.AutoAwesome,
+                        iconTint  = MaterialTheme.colorScheme.primary,
+                        title     = "Material You",
+                        subtitle  = "Warna dinamis dari wallpaper (Android 12+)",
+                        checked   = isDynamic,
+                        onChecked = { v -> doToggle { scope.launch { themePrefs.setDynamicColor(v) } } },
+                        isFirst   = false,
+                        isLast    = true,
+                    )
+                }
+            }
+
+            item { Spacer(Modifier.height(2.dp)) }
+
+            // ── Viewer Log ──────────────────────────────────────────────────
+            item { SectionLabel("Viewer Log") }
+            item {
+                SettingsCard {
+                    SettingsToggleItem(
+                        icon      = Icons.Outlined.ColorLens,
+                        iconTint  = Color(0xFF43A047),
+                        title     = "Warna Level Log",
+                        subtitle  = "Warnai baris sesuai level (debug, info, error...)",
+                        checked   = showColors,
+                        onChecked = { v -> doToggle { scope.launch { themePrefs.setShowLogColors(v) } } },
+                        isFirst   = true,
+                        isLast    = false,
+                    )
+                    RowDivider()
+                    SettingsToggleItem(
+                        icon      = Icons.Outlined.Tag,
+                        iconTint  = MaterialTheme.colorScheme.secondary,
+                        title     = "Nomor Baris",
+                        subtitle  = "Tampilkan nomor di gutter kiri",
+                        checked   = showNums,
+                        onChecked = { v -> doToggle { scope.launch { themePrefs.setShowLineNumbers(v) } } },
+                        isFirst   = false,
+                        isLast    = false,
+                    )
+                    RowDivider()
+                    SettingsToggleItem(
+                        icon      = Icons.AutoMirrored.Outlined.WrapText,
+                        iconTint  = MaterialTheme.colorScheme.tertiary,
+                        title     = "Word Wrap",
+                        subtitle  = "Bungkus baris yang terlalu panjang",
+                        checked   = wrapLines,
+                        onChecked = { v -> doToggle { scope.launch { themePrefs.setWrapLines(v) } } },
+                        isFirst   = false,
+                        isLast    = true,
+                    )
+                }
+            }
+
+            item { Spacer(Modifier.height(2.dp)) }
+
+            // ── Sistem ──────────────────────────────────────────────────────
+            item { SectionLabel("Sistem") }
+            item {
+                SettingsCard {
+                    val hasUpdate = updateState.updateInfo?.isNewVersion == true
+                    SettingsActionItem(
+                        icon     = if (hasUpdate) Icons.Outlined.SystemUpdate else Icons.Outlined.Refresh,
+                        iconTint = if (hasUpdate) MaterialTheme.colorScheme.primary
+                                   else MaterialTheme.colorScheme.onSurfaceVariant,
+                        title    = "Cek Pembaruan",
+                        subtitle = when {
+                            updateState.isChecking         -> "Memeriksa…"
+                            hasUpdate                      -> "v${updateState.updateInfo!!.latestVersion} tersedia!"
+                            updateState.updateInfo != null -> "Versi terbaru · v${BuildConfig.VERSION_NAME}"
+                            else                           -> "Ketuk untuk memeriksa · v${BuildConfig.VERSION_NAME}"
+                        },
+                        onClick  = {
+                            if (AdsManager.interstitialReady.value)
+                                onShowInterstitial { homeVm.updateVm.checkForUpdate(force = true) }
+                            else
+                                homeVm.updateVm.checkForUpdate(force = true)
+                        },
+                        isFirst  = true,
+                        isLast   = true,
+                        endSlot  = {
+                            AnimatedContent(
+                                targetState    = updateState.isChecking to hasUpdate,
+                                transitionSpec = { fadeIn() togetherWith fadeOut() },
+                                label          = "updateBadge",
+                            ) { (checking, update) ->
+                                when {
+                                    checking -> CircularProgressIndicator(
+                                        modifier    = Modifier.size(18.dp),
+                                        strokeWidth = 2.dp,
+                                        color       = MaterialTheme.colorScheme.primary,
+                                    )
+                                    update -> Badge(containerColor = MaterialTheme.colorScheme.error) {
+                                        Text("Baru", style = MaterialTheme.typography.labelSmall)
+                                    }
+                                    else -> Icon(
+                                        Icons.Outlined.ChevronRight, null,
+                                        modifier = Modifier.size(18.dp),
+                                        tint     = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                }
+                            }
+                        }
+                    )
+                }
+            }
+
+            item { Spacer(Modifier.height(20.dp)) }
+        }
+    }
+}
+
+// ── No Ads Rewarded Card ──────────────────────────────────────────────────────
+
+@Composable
+private fun NoAdsRewardedCard(
+    isActive        : Boolean,
+    remainingMs     : Long,
+    remainingClaims : Int,
+    canWatch        : Boolean,
+    rewardedReady   : Boolean,
+    onWatch         : () -> Unit,
+) {
+    val activeGreen  = Color(0xFF2E7D32)
+    val lightGreen   = Color(0xFF43A047)
+    val primary      = MaterialTheme.colorScheme.primary
+
+    val accentColor  = if (isActive) lightGreen else primary
+    val totalSec     = (remainingMs / 1000L).coerceAtLeast(0L)
+    val countdownStr = "%02d:%02d".format(totalSec / 60, totalSec % 60)
+
+    // Progress 0..1 dari 30 menit
+    val maxMs        = 30L * 60_000L
+    val progress     = if (isActive) (remainingMs.toFloat() / maxMs).coerceIn(0f, 1f) else 0f
+    val animProgress by animateFloatAsState(
+        targetValue   = progress,
+        animationSpec = tween(800, easing = EaseInOutCubic),
+        label         = "noAdsProgress"
+    )
+
+    Surface(
+        shape    = RoundedCornerShape(20.dp),
+        color    = MaterialTheme.colorScheme.surfaceContainerLow,
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column(modifier = Modifier.fillMaxWidth()) {
+
+            // ── Header gradient bar ─────────────────────────────────────────
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(4.dp)
+                    .clip(RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp))
+                    .background(
+                        if (isActive)
+                            Brush.horizontalGradient(
+                                listOf(Color(0xFF43A047), Color(0xFF66BB6A))
+                            )
+                        else
+                            Brush.horizontalGradient(
+                                listOf(
+                                    MaterialTheme.colorScheme.primary.copy(alpha = 0.3f),
+                                    MaterialTheme.colorScheme.primary.copy(alpha = 0.1f)
+                                )
+                            )
+                    )
+            )
+
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 18.dp, vertical = 16.dp),
+                verticalArrangement = Arrangement.spacedBy(14.dp)
+            ) {
+
+                // ── Status row ────────────────────────────────────────────
+                Row(
+                    verticalAlignment     = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    // Icon badge
+                    Box(
+                        modifier = Modifier
+                            .size(44.dp)
+                            .clip(RoundedCornerShape(14.dp))
+                            .background(accentColor.copy(alpha = 0.12f)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        AnimatedContent(
+                            targetState    = isActive,
+                            transitionSpec = { scaleIn(initialScale = 0.7f) + fadeIn() togetherWith
+                                              scaleOut(targetScale = 0.7f) + fadeOut() },
+                            label          = "noAdsIcon"
+                        ) { active ->
+                            Icon(
+                                imageVector = if (active) Icons.Outlined.Block
+                                              else Icons.Outlined.OndemandVideo,
+                                contentDescription = null,
+                                modifier    = Modifier.size(22.dp),
+                                tint        = if (active) activeGreen else primary
+                            )
+                        }
+                    }
+
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = if (isActive) "No Ads Aktif" else "Bebas Iklan Sementara",
+                            style      = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.Bold,
+                            color      = if (isActive) activeGreen
+                                         else MaterialTheme.colorScheme.onSurface
+                        )
+                        Spacer(Modifier.height(2.dp))
+                        Text(
+                            text = when {
+                                isActive              -> "Semua iklan dinonaktifkan"
+                                !canWatch             -> "Batas harian tercapai · reset tengah malam"
+                                !rewardedReady        -> "Memuat iklan, harap tunggu…"
+                                else                  -> "Tonton 1 iklan · bebas iklan 30 menit"
+                            },
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+
+                    // Kuota chip
+                    AnimatedContent(
+                        targetState    = remainingClaims,
+                        transitionSpec = { fadeIn() togetherWith fadeOut() },
+                        label          = "quotaChip"
+                    ) { q ->
+                        Surface(
+                            shape = RoundedCornerShape(10.dp),
+                            color = when {
+                                q == 0   -> MaterialTheme.colorScheme.errorContainer
+                                q == 1   -> Color(0xFFFFF3E0)
+                                else     -> MaterialTheme.colorScheme.secondaryContainer
+                            }
+                        ) {
+                            Column(
+                                modifier            = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally
+                            ) {
+                                Text(
+                                    "$q",
+                                    style      = MaterialTheme.typography.titleSmall,
+                                    fontWeight = FontWeight.Bold,
+                                    color      = when {
+                                        q == 0 -> MaterialTheme.colorScheme.error
+                                        q == 1 -> Color(0xFFE65100)
+                                        else   -> MaterialTheme.colorScheme.onSecondaryContainer
+                                    }
+                                )
+                                Text(
+                                    "sisa",
+                                    style = MaterialTheme.typography.labelSmall.copy(fontSize = 9.sp),
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                    }
+                }
+
+                // ── Countdown + progress (hanya saat aktif) ───────────────
+                AnimatedVisibility(
+                    visible = isActive,
+                    enter   = expandVertically() + fadeIn(),
+                    exit    = shrinkVertically() + fadeOut()
+                ) {
+                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Row(
+                            modifier              = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment     = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                "Berakhir dalam",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Text(
+                                countdownStr,
+                                style      = MaterialTheme.typography.labelLarge,
+                                fontWeight = FontWeight.Bold,
+                                color      = activeGreen
+                            )
+                        }
+                        LinearProgressIndicator(
+                            progress         = { animProgress },
+                            modifier         = Modifier
+                                .fillMaxWidth()
+                                .height(6.dp)
+                                .clip(RoundedCornerShape(3.dp)),
+                            color            = lightGreen,
+                            trackColor       = lightGreen.copy(alpha = 0.15f),
+                        )
+                    }
+                }
+
+                // ── Tombol aksi ────────────────────────────────────────────
+                val btnEnabled = canWatch && rewardedReady
+                Button(
+                    onClick  = onWatch,
+                    enabled  = btnEnabled,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(46.dp),
+                    shape  = RoundedCornerShape(12.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = if (isActive) lightGreen else primary,
+                        disabledContainerColor = MaterialTheme.colorScheme.surfaceVariant
+                    ),
+                    elevation = ButtonDefaults.buttonElevation(
+                        defaultElevation  = 0.dp,
+                        pressedElevation  = 0.dp
+                    )
+                ) {
+                    Icon(
+                        Icons.Outlined.PlayCircleOutline, null,
+                        modifier = Modifier.size(17.dp)
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    Text(
+                        text = when {
+                            !canWatch      -> "Batas harian tercapai (${RewardedNoAdsManager.DAILY_LIMIT}x/hari)"
+                            !rewardedReady -> "Memuat iklan…"
+                            isActive       -> "Perpanjang +30 Menit"
+                            else           -> "Tonton Iklan → No Ads 30 Menit"
+                        },
+                        style      = MaterialTheme.typography.labelLarge,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                }
+
+                // ── Info kecil ─────────────────────────────────────────────
+                Text(
+                    "Limit ${RewardedNoAdsManager.DAILY_LIMIT}x per hari · Reset pukul 00:00",
+                    style    = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
+                    color    = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                    modifier = Modifier.align(Alignment.CenterHorizontally)
                 )
-            }
-
-            item { Spacer(Modifier.height(4.dp)) }
-
-            // ── Viewer ────────────────────────────────────────────────────
-            item {
-                SettingGroupLabel("Viewer Log")
-            }
-
-            item {
-                SettingSwitch(
-                    title    = "Warna Level Log",
-                    subtitle = "Beri warna berbeda tiap level (V/D/I/W/E/F)",
-                    icon     = Icons.Outlined.ColorLens,
-                    checked  = showColors,
-                    onCheckedChange = { scope.launch { themePrefs.setShowLogColors(it) } }
-                )
-            }
-
-            item {
-                SettingSwitch(
-                    title    = "Nomor Baris",
-                    subtitle = "Tampilkan nomor baris di sisi kiri",
-                    icon     = Icons.Outlined.Tag,
-                    checked  = showNums,
-                    onCheckedChange = { scope.launch { themePrefs.setShowLineNumbers(it) } }
-                )
-            }
-
-            item {
-                SettingSwitch(
-                    title    = "Bungkus Baris (Word Wrap)",
-                    subtitle = "Bungkus baris panjang agar tidak perlu scroll horizontal",
-                    icon     = Icons.Outlined.WrapText,
-                    checked  = wrapLines,
-                    onCheckedChange = { scope.launch { themePrefs.setWrapLines(it) } }
-                )
-            }
-
-            item { Spacer(Modifier.height(4.dp)) }
-
-            // ── Info app ──────────────────────────────────────────────────
-            item {
-                SettingGroupLabel("Informasi Aplikasi")
-            }
-
-            item {
-                SettingInfoRow(label = "Versi",          value = "1.1")
-                SettingInfoRow(label = "Paket",          value = "com.aether.lv")
-                SettingInfoRow(label = "Min Android",    value = "Android 11 (API 30)")
-                SettingInfoRow(label = "Target Android", value = "Android 16 (API 36)")
-                SettingInfoRow(label = "Maintainer",     value = "@AetherDev22")
             }
         }
     }
 }
 
+// ── Section label ─────────────────────────────────────────────────────────────
+
 @Composable
-private fun SettingGroupLabel(label: String) {
+private fun SectionLabel(text: String) {
     Text(
-        label,
-        style  = MaterialTheme.typography.labelMedium,
-        color  = MaterialTheme.colorScheme.primary,
-        modifier = Modifier.padding(vertical = 4.dp)
+        text       = text,
+        style      = MaterialTheme.typography.labelMedium,
+        fontWeight = FontWeight.SemiBold,
+        color      = MaterialTheme.colorScheme.primary,
+        modifier   = Modifier.padding(start = 4.dp, top = 2.dp, bottom = 4.dp),
     )
 }
 
+// ── Card container ────────────────────────────────────────────────────────────
+
 @Composable
-private fun SettingSwitch(
-    title           : String,
-    subtitle        : String,
-    icon            : androidx.compose.ui.graphics.vector.ImageVector,
-    checked         : Boolean,
-    onCheckedChange : (Boolean) -> Unit
+private fun SettingsCard(content: @Composable ColumnScope.() -> Unit) {
+    Surface(
+        shape          = RoundedCornerShape(18.dp),
+        color          = MaterialTheme.colorScheme.surfaceContainerLow,
+        tonalElevation = 0.dp,
+        modifier       = Modifier.fillMaxWidth(),
+    ) {
+        Column(content = content)
+    }
+}
+
+// ── Toggle row ────────────────────────────────────────────────────────────────
+
+@Composable
+private fun SettingsToggleItem(
+    icon      : ImageVector,
+    iconTint  : Color,
+    title     : String,
+    subtitle  : String,
+    checked   : Boolean,
+    onChecked : (Boolean) -> Unit,
+    isFirst   : Boolean,
+    isLast    : Boolean,
 ) {
-    Card(
-        shape  = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
-        ),
-        elevation = CardDefaults.cardElevation(0.dp)
+    val bgColor by animateColorAsState(
+        targetValue   = if (checked) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.22f)
+                        else Color.Transparent,
+        animationSpec = spring(stiffness = Spring.StiffnessMediumLow),
+        label         = "toggleBg",
+    )
+    Surface(
+        color    = bgColor,
+        modifier = Modifier.fillMaxWidth(),
+        onClick  = { onChecked(!checked) },
     ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 12.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(12.dp)
+                .padding(
+                    start  = 16.dp,
+                    end    = 14.dp,
+                    top    = if (isFirst) 15.dp else 12.dp,
+                    bottom = if (isLast)  15.dp else 12.dp,
+                ),
+            verticalAlignment     = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(14.dp),
         ) {
-            Icon(icon, null, tint = MaterialTheme.colorScheme.primary)
-            Column(modifier = Modifier.weight(1f)) {
-                Text(title,    style = MaterialTheme.typography.bodyLarge)
-                Text(subtitle, style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+            SettingsIconBox(icon, iconTint)
+            Column(
+                modifier            = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(1.dp),
+            ) {
+                Text(title,    style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
+                Text(subtitle, style = MaterialTheme.typography.bodySmall,  color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
-            Switch(checked = checked, onCheckedChange = onCheckedChange)
+            Switch(
+                checked         = checked,
+                onCheckedChange = onChecked,
+                modifier        = Modifier.height(24.dp),
+            )
         }
     }
 }
 
+// ── Action row ────────────────────────────────────────────────────────────────
+
 @Composable
-private fun SettingInfoRow(label: String, value: String) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 4.dp, horizontal = 4.dp),
-        horizontalArrangement = Arrangement.SpaceBetween
+private fun SettingsActionItem(
+    icon     : ImageVector,
+    iconTint : Color,
+    title    : String,
+    subtitle : String,
+    onClick  : () -> Unit,
+    isFirst  : Boolean,
+    isLast   : Boolean,
+    endSlot  : (@Composable () -> Unit)? = null,
+) {
+    Surface(
+        color    = Color.Transparent,
+        modifier = Modifier.fillMaxWidth(),
+        onClick  = onClick,
     ) {
-        Text(label, style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant)
-        Text(value, style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurface)
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(
+                    start  = 16.dp,
+                    end    = 16.dp,
+                    top    = if (isFirst) 15.dp else 12.dp,
+                    bottom = if (isLast)  15.dp else 12.dp,
+                ),
+            verticalAlignment     = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(14.dp),
+        ) {
+            SettingsIconBox(icon, iconTint)
+            Column(
+                modifier            = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(1.dp),
+            ) {
+                Text(title,    style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
+                Text(subtitle, style = MaterialTheme.typography.bodySmall,  color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            if (endSlot != null) endSlot()
+            else Icon(
+                Icons.Outlined.ChevronRight, null,
+                modifier = Modifier.size(18.dp),
+                tint     = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
     }
+}
+
+// ── Icon box ──────────────────────────────────────────────────────────────────
+
+@Composable
+private fun SettingsIconBox(icon: ImageVector, tint: Color) {
+    Box(
+        modifier = Modifier
+            .size(36.dp)
+            .clip(RoundedCornerShape(10.dp))
+            .background(tint.copy(alpha = 0.13f)),
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(icon, null, modifier = Modifier.size(18.dp), tint = tint)
+    }
+}
+
+// ── Divider ───────────────────────────────────────────────────────────────────
+
+@Composable
+private fun RowDivider() {
+    HorizontalDivider(
+        modifier  = Modifier.padding(start = 66.dp),
+        thickness = 0.4.dp,
+        color     = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f),
+    )
+}
+
+// ── Format helpers ────────────────────────────────────────────────────────────
+
+private fun formatDuration(ms: Long): String {
+    val totalMinutes = (ms / 60_000L).coerceAtLeast(0L)
+    val hours        = totalMinutes / 60
+    val minutes      = totalMinutes % 60
+    return if (hours > 0) "${hours}j ${minutes}m" else "${minutes} menit"
+}
+
+private fun formatCountdown(ms: Long): String {
+    val totalSec = (ms / 1_000L).coerceAtLeast(0L)
+    return "%02d:%02d".format(totalSec / 60, totalSec % 60)
 }

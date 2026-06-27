@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<paths>
+    <!-- Lokasi APK yang di-download: context.cacheDir -->
+    <cache-path
+        name="apk_updates"
+        path="." />
+</paths>

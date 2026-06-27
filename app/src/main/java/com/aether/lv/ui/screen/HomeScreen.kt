@@ -4,7 +4,8 @@ import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.*
-import androidx.compose.foundation.*
+import androidx.compose.animation.core.*
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.*
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -16,240 +17,467 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.aether.lv.ads.AdsManager
+import com.aether.lv.ads.RewardedNoAdsManager
 import com.aether.lv.data.model.RecentFile
+import com.aether.lv.update.UpdateDialog
 import com.aether.lv.util.FileTypeUtil
 import com.aether.lv.util.FormatUtil
-import com.aether.lv.ui.component.FileTypeChip
-import com.aether.lv.ui.component.FileTypeIcon
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun HomeScreen(
-    onOpenFile : (Uri) -> Unit,
-    onSettings : () -> Unit,
-    onAbout    : () -> Unit,
-    vm         : HomeViewModel = viewModel()
+    onOpenFile         : (Uri) -> Unit,
+    onSettings         : () -> Unit,
+    onAbout            : () -> Unit,
+    onShowInterstitial : (() -> Unit) -> Unit = { it() },
+    vm                 : HomeViewModel = viewModel()
 ) {
-    val recentFiles by vm.recentFiles.collectAsStateWithLifecycle()
-    var showClearDialog by remember { mutableStateOf(false) }
+    val recentFiles       by vm.recentFiles.collectAsStateWithLifecycle()
+    val updateState       by vm.updateVm.state.collectAsStateWithLifecycle()
+    val noAdsState        by RewardedNoAdsManager.state.collectAsStateWithLifecycle()
+    var showClearDialog   by remember { mutableStateOf(false) }
+    val snackbarHostState = remember { SnackbarHostState() }
+    val scope             = rememberCoroutineScope()
+    var fileOpenCount     by remember { mutableStateOf(0) }
 
-    // File picker — filter ekstensi yang diizinkan
+    // Ticker untuk countdown no-ads di banner
+    var tickMs by remember { mutableLongStateOf(System.currentTimeMillis()) }
+    LaunchedEffect(Unit) {
+        while (true) {
+            kotlinx.coroutines.delay(1_000)
+            tickMs = System.currentTimeMillis()
+        }
+    }
+    val noAdsRemainingMs = (noAdsState.noAdsUntil - tickMs).coerceAtLeast(0L)
+    val isNoAdsActive    = noAdsRemainingMs > 0L
+
+    val handleOpenFile: (Uri) -> Unit = { uri ->
+        fileOpenCount++
+        if (fileOpenCount % 2 == 0 && AdsManager.interstitialReady.value) {
+            onShowInterstitial { onOpenFile(uri) }
+        } else {
+            onOpenFile(uri)
+        }
+    }
+
     val filePicker = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.OpenDocument()
-    ) { uri: Uri? -> uri?.let { onOpenFile(it) } }
+        ActivityResultContracts.OpenDocument()
+    ) { uri: Uri? -> uri?.let { handleOpenFile(it) } }
+
+    if (updateState.showDialog) {
+        UpdateDialog(
+            state      = updateState,
+            onDismiss  = { vm.updateVm.dismissDialog() },
+            onDownload = { vm.updateVm.startDownload() },
+            onInstall  = { vm.updateVm.install() },
+            onRetry    = { vm.updateVm.retryDownload() }
+        )
+    }
 
     Scaffold(
+        snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
-            TopAppBar(
-                title = {
-                    Column {
-                        Text("LogLog", style = MaterialTheme.typography.titleLarge)
-                        Text(
-                            "Log Viewer",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                },
-                actions = {
-                    IconButton(onClick = onAbout) {
-                        Icon(Icons.Outlined.Info, contentDescription = "Tentang")
-                    }
-                    IconButton(onClick = onSettings) {
-                        Icon(Icons.Outlined.Settings, contentDescription = "Pengaturan")
-                    }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.surface
+            Column {
+                TopAppBar(
+                    title = {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            // Logo pill
+                            Surface(
+                                shape  = RoundedCornerShape(10.dp),
+                                color  = MaterialTheme.colorScheme.primaryContainer,
+                                modifier = Modifier.size(32.dp)
+                            ) {
+                                Box(contentAlignment = Alignment.Center) {
+                                    Icon(
+                                        Icons.Outlined.Article, null,
+                                        modifier = Modifier.size(18.dp),
+                                        tint     = MaterialTheme.colorScheme.primary
+                                    )
+                                }
+                            }
+                            Spacer(Modifier.width(10.dp))
+                            Text(
+                                "LogLog",
+                                style      = MaterialTheme.typography.titleLarge,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    },
+                    actions = {
+                        // Update badge
+                        AnimatedVisibility(
+                            visible = updateState.updateInfo?.isNewVersion == true,
+                            enter   = scaleIn() + fadeIn(),
+                            exit    = scaleOut() + fadeOut()
+                        ) {
+                            BadgedBox(badge = {
+                                Badge(containerColor = MaterialTheme.colorScheme.error)
+                            }) {
+                                IconButton(onClick = { vm.updateVm.showUpdateDialog() }) {
+                                    Icon(Icons.Outlined.SystemUpdate, "Update tersedia")
+                                }
+                            }
+                        }
+                        IconButton(onClick = onAbout) {
+                            Icon(Icons.Outlined.Info, "Tentang")
+                        }
+                        IconButton(onClick = onSettings) {
+                            Icon(Icons.Outlined.Settings, "Pengaturan")
+                        }
+                    },
+                    colors = TopAppBarDefaults.topAppBarColors(
+                        containerColor = MaterialTheme.colorScheme.surface
+                    )
                 )
-            )
+                HorizontalDivider(thickness = 0.5.dp)
+            }
         },
         floatingActionButton = {
             ExtendedFloatingActionButton(
-                onClick = {
-                    filePicker.launch(arrayOf(
-                        "text/plain", "application/json", "text/xml",
-                        "application/xml", "text/x-log", "*/*"
-                    ))
-                },
-                icon    = { Icon(Icons.Rounded.FolderOpen, "Buka File") },
-                text    = { Text("Buka File") }
+                onClick        = { filePicker.launch(arrayOf("*/*")) },
+                icon           = { Icon(Icons.Rounded.FolderOpen, null) },
+                text           = { Text("Buka File") },
+                containerColor = MaterialTheme.colorScheme.primary,
+                contentColor   = MaterialTheme.colorScheme.onPrimary,
+                expanded       = recentFiles.isEmpty()
             )
         }
     ) { innerPadding ->
-        if (recentFiles.isEmpty()) {
-            EmptyState(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(innerPadding),
-                onPickFile = {
-                    filePicker.launch(arrayOf("text/plain","application/json","text/xml","application/xml","*/*"))
-                }
-            )
-        } else {
-            LazyColumn(
-                modifier       = Modifier
-                    .fillMaxSize()
-                    .padding(innerPadding),
-                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                item {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment     = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            "Riwayat (${recentFiles.size})",
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.SemiBold
-                        )
-                        TextButton(onClick = { showClearDialog = true }) {
-                            Icon(Icons.Outlined.DeleteSweep, null,
-                                modifier = Modifier.size(16.dp))
-                            Spacer(Modifier.width(4.dp))
-                            Text("Hapus Semua")
+        AnimatedContent(
+            targetState    = recentFiles.isEmpty(),
+            transitionSpec = { fadeIn(tween(220)) togetherWith fadeOut(tween(120)) },
+            modifier       = Modifier.fillMaxSize().padding(innerPadding)
+        ) { isEmpty ->
+            if (isEmpty) {
+                EmptyState(
+                    modifier   = Modifier.fillMaxSize(),
+                    onPickFile = { filePicker.launch(arrayOf("*/*")) }
+                )
+            } else {
+                LazyColumn(
+                    modifier       = Modifier.fillMaxSize(),
+                    contentPadding = PaddingValues(bottom = 100.dp),
+                ) {
+
+                    // ── No Ads banner (hanya tampil saat aktif) ──────────────
+                    if (isNoAdsActive) {
+                        item {
+                            NoAdsBanner(
+                                remainingMs = noAdsRemainingMs,
+                                modifier    = Modifier.padding(horizontal = 16.dp, vertical = 10.dp)
+                            )
                         }
                     }
-                }
 
-                items(
-                    items = recentFiles,
-                    key   = { it.path }
-                ) { file ->
-                    RecentFileCard(
-                        file    = file,
-                        onClick = { onOpenFile(Uri.parse(file.path)) },
-                        onDelete= { vm.removeRecent(file.path) }
-                    )
-                }
+                    // ── Section header ────────────────────────────────────────
+                    item {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 20.dp, vertical = 10.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment     = Alignment.CenterVertically
+                        ) {
+                            Row(
+                                verticalAlignment     = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                Icon(
+                                    Icons.Outlined.History, null,
+                                    modifier = Modifier.size(14.dp),
+                                    tint     = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                Text(
+                                    "Riwayat",
+                                    style      = MaterialTheme.typography.labelMedium,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color      = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                Surface(
+                                    shape = RoundedCornerShape(5.dp),
+                                    color = MaterialTheme.colorScheme.secondaryContainer
+                                ) {
+                                    Text(
+                                        "${recentFiles.size}",
+                                        style    = MaterialTheme.typography.labelSmall,
+                                        color    = MaterialTheme.colorScheme.onSecondaryContainer,
+                                        modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.dp)
+                                    )
+                                }
+                            }
+                            TextButton(
+                                onClick        = { showClearDialog = true },
+                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)
+                            ) {
+                                Icon(Icons.Outlined.DeleteSweep, null, modifier = Modifier.size(13.dp))
+                                Spacer(Modifier.width(4.dp))
+                                Text("Hapus Semua", style = MaterialTheme.typography.labelSmall)
+                            }
+                        }
+                    }
 
-                item { Spacer(Modifier.height(80.dp)) } // FAB clearance
+                    // ── File list card ────────────────────────────────────────
+                    item {
+                        Surface(
+                            modifier       = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 16.dp),
+                            shape          = RoundedCornerShape(18.dp),
+                            color          = MaterialTheme.colorScheme.surfaceContainerLow,
+                            tonalElevation = 0.dp,
+                        ) {
+                            Column {
+                                recentFiles.forEachIndexed { index, file ->
+                                    RecentFileRow(
+                                        file     = file,
+                                        onClick  = {
+                                            if (file.isPersisted) {
+                                                handleOpenFile(Uri.parse(file.path))
+                                            } else {
+                                                scope.launch {
+                                                    snackbarHostState.showSnackbar(
+                                                        message  = "Buka lagi dari file manager.",
+                                                        duration = SnackbarDuration.Short
+                                                    )
+                                                }
+                                            }
+                                        },
+                                        onDelete = { vm.removeRecent(file.path) }
+                                    )
+                                    if (index < recentFiles.lastIndex) {
+                                        HorizontalDivider(
+                                            modifier  = Modifier.padding(start = 62.dp),
+                                            thickness = 0.4.dp,
+                                            color     = MaterialTheme.colorScheme.outlineVariant
+                                                .copy(alpha = 0.4f)
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    item { Spacer(Modifier.height(8.dp)) }
+                }
             }
         }
     }
 
-    // Dialog konfirmasi hapus semua
     if (showClearDialog) {
         AlertDialog(
             onDismissRequest = { showClearDialog = false },
-            icon    = { Icon(Icons.Outlined.DeleteForever, null) },
-            title   = { Text("Hapus Semua Riwayat?") },
-            text    = { Text("Semua riwayat file yang pernah dibuka akan dihapus.") },
-            confirmButton = {
-                TextButton(onClick = {
-                    vm.clearHistory()
-                    showClearDialog = false
-                }) { Text("Hapus", color = MaterialTheme.colorScheme.error) }
+            icon             = { Icon(Icons.Outlined.DeleteForever, null) },
+            title            = { Text("Hapus Semua Riwayat?") },
+            text             = { Text("Semua riwayat file yang pernah dibuka akan dihapus.") },
+            confirmButton    = {
+                TextButton(onClick = { vm.clearHistory(); showClearDialog = false }) {
+                    Text("Hapus", color = MaterialTheme.colorScheme.error)
+                }
             },
-            dismissButton = {
+            dismissButton    = {
                 TextButton(onClick = { showClearDialog = false }) { Text("Batal") }
             }
         )
     }
 }
 
-@Composable
-private fun RecentFileCard(
-    file    : RecentFile,
-    onClick : () -> Unit,
-    onDelete: () -> Unit
-) {
-    var showMenu by remember { mutableStateOf(false) }
-    val ext = file.fileType
+// ── No Ads Banner ─────────────────────────────────────────────────────────────
 
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(16.dp))
-            .clickable { onClick() },
-        shape  = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
-        ),
-        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
+@Composable
+private fun NoAdsBanner(remainingMs: Long, modifier: Modifier = Modifier) {
+    val totalSec  = (remainingMs / 1000L).coerceAtLeast(0L)
+    val min       = totalSec / 60
+    val sec       = totalSec % 60
+    val timeLabel = "%02d:%02d".format(min, sec)
+
+    Surface(
+        shape    = RoundedCornerShape(14.dp),
+        color    = Color(0xFF43A047).copy(alpha = 0.12f),
+        modifier = modifier.fillMaxWidth()
     ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(12.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(12.dp)
+                .padding(horizontal = 14.dp, vertical = 10.dp),
+            verticalAlignment     = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(10.dp)
         ) {
-            // Ikon tipe file
-            Surface(
-                shape  = RoundedCornerShape(12.dp),
-                color  = MaterialTheme.colorScheme.primaryContainer,
-                modifier = Modifier.size(48.dp)
+            Box(
+                modifier = Modifier
+                    .size(32.dp)
+                    .clip(RoundedCornerShape(9.dp))
+                    .background(Color(0xFF43A047).copy(alpha = 0.18f)),
+                contentAlignment = Alignment.Center
             ) {
-                Box(contentAlignment = Alignment.Center) {
-                    FileTypeIcon(iconType = FileTypeUtil.iconKey(ext), modifier = Modifier.size(26.dp))
-                }
+                Icon(
+                    Icons.Outlined.Block, null,
+                    modifier = Modifier.size(16.dp),
+                    tint     = Color(0xFF2E7D32)
+                )
             }
-
-            // Info file
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text  = file.displayName,
-                    style = MaterialTheme.typography.bodyMedium,
+                    "No Ads Aktif",
+                    style      = MaterialTheme.typography.labelMedium,
                     fontWeight = FontWeight.SemiBold,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
+                    color      = Color(0xFF2E7D32)
                 )
-                Spacer(Modifier.height(2.dp))
+                Text(
+                    "Iklan dinonaktifkan · sisa $timeLabel",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = Color(0xFF43A047)
+                )
+            }
+            // Progress ring visual sederhana
+            Surface(
+                shape = RoundedCornerShape(8.dp),
+                color = Color(0xFF43A047).copy(alpha = 0.18f)
+            ) {
+                Text(
+                    timeLabel,
+                    style      = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.Bold,
+                    color      = Color(0xFF2E7D32),
+                    modifier   = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
+                )
+            }
+        }
+    }
+}
+
+// ── File Row ──────────────────────────────────────────────────────────────────
+
+@Composable
+private fun RecentFileRow(
+    file    : RecentFile,
+    onClick : () -> Unit,
+    onDelete: () -> Unit
+) {
+    var showMenu    by remember { mutableStateOf(false) }
+    val ext         = file.fileType
+    val isTemporary = !file.isPersisted
+    val iconType    = FileTypeUtil.iconKey(ext)
+    val chipLabel   = FileTypeUtil.label(ext)
+    val chipColor   = fileTypeColor(ext)
+
+    Surface(
+        onClick  = onClick,
+        color    = Color.Transparent,
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 14.dp, vertical = 11.dp),
+            verticalAlignment     = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            // ── Icon kiri ─────────────────────────────────────────────────
+            Box(
+                modifier = Modifier
+                    .size(38.dp)
+                    .clip(RoundedCornerShape(11.dp))
+                    .background(chipColor.copy(alpha = if (isTemporary) 0.07f else 0.13f)),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector        = fileTypeIcon(iconType),
+                    contentDescription = null,
+                    modifier           = Modifier.size(19.dp),
+                    tint               = if (isTemporary) chipColor.copy(alpha = 0.35f) else chipColor
+                )
+            }
+
+            // ── Teks tengah ───────────────────────────────────────────────
+            Column(
+                modifier            = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(3.dp)
+            ) {
+                Text(
+                    text       = file.displayName,
+                    style      = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.Medium,
+                    maxLines   = 1,
+                    overflow   = TextOverflow.Ellipsis,
+                    color      = if (isTemporary)
+                        MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
+                    else
+                        MaterialTheme.colorScheme.onSurface
+                )
                 Row(
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                    verticalAlignment = Alignment.CenterVertically
+                    verticalAlignment     = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
-                    FileTypeChip(label = FileTypeUtil.label(ext))
-                    Text(
-                        "•",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+                    // Badge tipe file
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(4.dp))
+                            .background(chipColor.copy(alpha = 0.13f))
+                            .padding(horizontal = 5.dp, vertical = 1.dp)
+                    ) {
+                        Text(
+                            text       = chipLabel,
+                            style      = MaterialTheme.typography.labelSmall.copy(fontSize = 9.sp),
+                            color      = chipColor,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    }
+                    MetaDot()
                     Text(
                         FormatUtil.formatSize(file.sizeBytes),
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                     if (file.lineCount > 0) {
-                        Text("•",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        MetaDot()
                         Text(
                             "${file.lineCount} baris",
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
+                    MetaDot()
+                    Text(
+                        FormatUtil.formatRelativeTime(file.lastOpenedAt),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = if (isTemporary)
+                            MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.38f)
+                        else
+                            MaterialTheme.colorScheme.primary.copy(alpha = 0.75f)
+                    )
                 }
-                Spacer(Modifier.height(2.dp))
-                Text(
-                    FormatUtil.formatRelativeTime(file.lastOpenedAt),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.primary
-                )
             }
 
-            // Menu hapus
+            // ── Menu kanan ────────────────────────────────────────────────
             Box {
-                IconButton(onClick = { showMenu = true }) {
-                    Icon(Icons.Outlined.MoreVert, null, modifier = Modifier.size(20.dp))
+                IconButton(
+                    onClick  = { showMenu = true },
+                    modifier = Modifier.size(30.dp)
+                ) {
+                    Icon(
+                        Icons.Outlined.MoreVert, null,
+                        modifier = Modifier.size(15.dp),
+                        tint     = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+                    )
                 }
-                DropdownMenu(expanded = showMenu, onDismissRequest = { showMenu = false }) {
+                DropdownMenu(
+                    expanded         = showMenu,
+                    onDismissRequest = { showMenu = false }
+                ) {
                     DropdownMenuItem(
-                        text = { Text("Hapus dari Riwayat") },
+                        text        = { Text("Hapus dari Riwayat") },
                         leadingIcon = { Icon(Icons.Outlined.Delete, null) },
-                        onClick = {
-                            showMenu = false
-                            onDelete()
-                        }
+                        onClick     = { showMenu = false; onDelete() }
                     )
                 }
             }
@@ -257,37 +485,80 @@ private fun RecentFileCard(
     }
 }
 
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
 @Composable
-private fun EmptyState(
-    modifier    : Modifier = Modifier,
-    onPickFile  : () -> Unit
-) {
+private fun fileTypeColor(ext: String): Color {
+    val scheme = MaterialTheme.colorScheme
+    return when {
+        ext == "json"                   -> Color(0xFF43A047)
+        ext == "xml"                    -> Color(0xFF1E88E5)
+        ext == "yaml" || ext == "yml"   -> Color(0xFFFB8C00)
+        ext == "err" || ext.contains("err") -> Color(0xFFE53935)
+        ext == "out" || ext.contains("out") -> Color(0xFF8E24AA)
+        ext.endsWith(".gz")             -> Color(0xFF6D4C41)
+        else                            -> scheme.primary
+    }
+}
+
+@Composable
+private fun fileTypeIcon(iconType: com.aether.lv.util.FileIconType): ImageVector =
+    when (iconType) {
+        com.aether.lv.util.FileIconType.JSON  -> Icons.Outlined.DataObject
+        com.aether.lv.util.FileIconType.XML   -> Icons.Outlined.Code
+        com.aether.lv.util.FileIconType.YAML  -> Icons.Outlined.Settings
+        com.aether.lv.util.FileIconType.ERROR -> Icons.Outlined.ErrorOutline
+        com.aether.lv.util.FileIconType.OUT   -> Icons.Outlined.Terminal
+        com.aether.lv.util.FileIconType.GZ    -> Icons.Outlined.FolderZip
+        com.aether.lv.util.FileIconType.LOG   -> Icons.Outlined.Article
+    }
+
+@Composable
+private fun MetaDot() {
+    Text(
+        "·",
+        style = MaterialTheme.typography.labelSmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.3f)
+    )
+}
+
+// ── Empty State ───────────────────────────────────────────────────────────────
+
+@Composable
+private fun EmptyState(modifier: Modifier = Modifier, onPickFile: () -> Unit) {
     Column(
-        modifier = modifier,
+        modifier            = modifier,
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center
     ) {
-        Icon(
-            imageVector = Icons.Outlined.FolderOpen,
-            contentDescription = null,
-            modifier = Modifier.size(80.dp),
-            tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.4f)
-        )
-        Spacer(Modifier.height(16.dp))
+        Surface(
+            shape    = RoundedCornerShape(28.dp),
+            color    = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.45f),
+            modifier = Modifier.size(84.dp)
+        ) {
+            Box(contentAlignment = Alignment.Center) {
+                Icon(
+                    Icons.Outlined.FolderOpen, null,
+                    modifier = Modifier.size(42.dp),
+                    tint     = MaterialTheme.colorScheme.primary.copy(alpha = 0.65f)
+                )
+            }
+        }
+        Spacer(Modifier.height(18.dp))
         Text(
             "Belum Ada Riwayat",
-            style = MaterialTheme.typography.titleMedium,
+            style      = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.SemiBold,
+        )
+        Spacer(Modifier.height(5.dp))
+        Text(
+            "Buka file log, txt, json, xml, gz, dan lainnya",
+            style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
-        Spacer(Modifier.height(6.dp))
-        Text(
-            "Buka file log, txt, json, xml, yaml, err, atau out",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
-        )
-        Spacer(Modifier.height(24.dp))
-        OutlinedButton(onClick = onPickFile) {
-            Icon(Icons.Outlined.FileOpen, null, modifier = Modifier.size(18.dp))
+        Spacer(Modifier.height(26.dp))
+        FilledTonalButton(onClick = onPickFile) {
+            Icon(Icons.Outlined.FileOpen, null, modifier = Modifier.size(17.dp))
             Spacer(Modifier.width(8.dp))
             Text("Pilih File")
         }

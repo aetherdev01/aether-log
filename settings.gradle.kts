@@ -16,6 +16,8 @@ dependencyResolutionManagement {
     repositories {
         google()
         mavenCentral()
+        // Unity Ads SDK repository
+        maven { url = uri("https://unityads.unity3d.com/sdk-dist/android/repo") }
     }
 }
 

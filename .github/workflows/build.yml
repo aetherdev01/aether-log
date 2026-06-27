@@ -1,0 +1,90 @@
+name: Build LogLog
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Build Release APK
+    runs-on: ubuntu-latest
+
+    steps:
+      # ── 1. Checkout ──────────────────────────────────────────────────────────
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # ── 2. JDK 17 ────────────────────────────────────────────────────────────
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      # ── 3. Setup Gradle ───────────────────────────────────────────────────────
+      # Tidak perlu "gradle wrapper" manual — setup-gradle sudah handle ini.
+      # Versi wrapper diambil dari gradle/wrapper/gradle-wrapper.properties di repo.
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      # ── 4. Gradle wrapper permission ─────────────────────────────────────────
+      - name: Grant execute permission
+        run: chmod +x ./gradlew
+
+      # ── 5. Gradle cache ──────────────────────────────────────────────────────
+      - name: Cache Gradle
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/libs.versions.toml', '**/gradle-wrapper.properties') }}
+          restore-keys: ${{ runner.os }}-gradle-
+
+      # ── 6. Setup keystore ────────────────────────────────────────────────────
+      - name: Setup signing
+        run: |
+          echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 -d > log.jks
+          printf '%s\n' \
+            "STORE_FILE=log.jks" \
+            "STORE_PASSWORD=${{ secrets.STORE_PASSWORD }}" \
+            "KEY_ALIAS=${{ secrets.KEY_ALIAS }}" \
+            "KEY_PASSWORD=${{ secrets.KEY_PASSWORD }}" \
+            > local.properties
+
+      # ── 7. Build Release APK ─────────────────────────────────────────────────
+      - name: Build Release APK
+        run: ./gradlew assembleRelease --no-daemon --stacktrace
+
+      # ── 8. Upload artifact ───────────────────────────────────────────────────
+      - name: Upload Release APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: loglog-release-${{ github.run_number }}
+          path: app/build/outputs/apk/release/loglog-v*-release.apk
+          if-no-files-found: error
+
+      # ── 9. Notif Telegram ───────────────────────────────────────────────────
+      - name: Telegram Notification
+        if: always()
+        run: |
+          STATUS="${{ job.status }}"
+          SHA="${{ github.sha }}"
+          SHA_SHORT="${SHA:0:7}"
+          RUN_URL="https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+
+          if [ "$STATUS" = "success" ]; then
+            EMOJI="✅"
+            MSG="Build <b>LogLog</b> berhasil"
+          else
+            EMOJI="❌"
+            MSG="Build <b>LogLog</b> gagal"
+          fi
+
+          TEXT="${EMOJI} ${MSG}"$'\n'"<code>${SHA_SHORT}</code> — <a href=\"${RUN_URL}\">lihat detail</a>"
+
+          curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
+            -d chat_id="${{ secrets.TELEGRAM_CHAT_ID }}" \
+            -d parse_mode="HTML" \
+            -d "text=${TEXT}" || true
