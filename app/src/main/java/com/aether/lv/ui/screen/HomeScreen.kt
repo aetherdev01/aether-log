@@ -5,7 +5,9 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.*
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -19,6 +21,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -33,21 +37,24 @@ import com.aether.lv.util.FileTypeUtil
 import com.aether.lv.util.FormatUtil
 import kotlinx.coroutines.launch
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 fun HomeScreen(
     onOpenFile         : (Uri) -> Unit,
     onSettings         : () -> Unit,
     onAbout            : () -> Unit,
+    onOpenLicense      : () -> Unit = {},
     onShowInterstitial : (() -> Unit) -> Unit = { it() },
     vm                 : HomeViewModel = viewModel()
 ) {
     val recentFiles       by vm.recentFiles.collectAsStateWithLifecycle()
     val updateState       by vm.updateVm.state.collectAsStateWithLifecycle()
+    val licenseState      by vm.licenseVm.licenseState.collectAsStateWithLifecycle()
     val noAdsState        by RewardedNoAdsManager.state.collectAsStateWithLifecycle()
     var showClearDialog   by remember { mutableStateOf(false) }
     val snackbarHostState = remember { SnackbarHostState() }
     val scope             = rememberCoroutineScope()
+    val haptic            = LocalHapticFeedback.current
     var fileOpenCount     by remember { mutableStateOf(0) }
 
     // Ticker untuk countdown no-ads di banner
@@ -60,10 +67,12 @@ fun HomeScreen(
     }
     val noAdsRemainingMs = (noAdsState.noAdsUntil - tickMs).coerceAtLeast(0L)
     val isNoAdsActive    = noAdsRemainingMs > 0L
+    // Premium dari lisensi → iklan dimatikan permanen, terlepas dari countdown rewarded.
+    val isAdsDisabled    = licenseState.isNoAds || isNoAdsActive
 
     val handleOpenFile: (Uri) -> Unit = { uri ->
         fileOpenCount++
-        if (fileOpenCount % 2 == 0 && AdsManager.interstitialReady.value) {
+        if (!isAdsDisabled && fileOpenCount % 2 == 0 && AdsManager.interstitialReady.value) {
             onShowInterstitial { onOpenFile(uri) }
         } else {
             onOpenFile(uri)
@@ -90,7 +99,18 @@ fun HomeScreen(
             Column {
                 TopAppBar(
                     title = {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(8.dp))
+                                .combinedClickable(
+                                    onClick = { /* tap biasa — tidak melakukan apa-apa */ },
+                                    onLongClick = {
+                                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                        onOpenLicense()
+                                    }
+                                )
+                        ) {
                             // Logo pill
                             Surface(
                                 shape  = RoundedCornerShape(10.dp),
@@ -111,6 +131,16 @@ fun HomeScreen(
                                 style      = MaterialTheme.typography.titleLarge,
                                 fontWeight = FontWeight.Bold
                             )
+                            // Indikator kecil saat premium aktif (tetap subtle, bukan tombol)
+                            if (licenseState.isNoAds) {
+                                Spacer(Modifier.width(6.dp))
+                                Icon(
+                                    Icons.Rounded.Star,
+                                    contentDescription = "Premium aktif",
+                                    modifier = Modifier.size(14.dp),
+                                    tint     = Color(0xFFFFB300)
+                                )
+                            }
                         }
                     },
                     actions = {
@@ -169,10 +199,11 @@ fun HomeScreen(
                     contentPadding = PaddingValues(bottom = 100.dp),
                 ) {
 
-                    // ── No Ads banner (hanya tampil saat aktif) ──────────────
-                    if (isNoAdsActive) {
+                    // ── No Ads banner (premium lisensi atau rewarded aktif) ──
+                    if (isAdsDisabled) {
                         item {
                             NoAdsBanner(
+                                isPremium   = licenseState.isNoAds,
                                 remainingMs = noAdsRemainingMs,
                                 modifier    = Modifier.padding(horizontal = 16.dp, vertical = 10.dp)
                             )
@@ -294,7 +325,7 @@ fun HomeScreen(
 // ── No Ads Banner ─────────────────────────────────────────────────────────────
 
 @Composable
-private fun NoAdsBanner(remainingMs: Long, modifier: Modifier = Modifier) {
+private fun NoAdsBanner(isPremium: Boolean, remainingMs: Long, modifier: Modifier = Modifier) {
     val totalSec  = (remainingMs / 1000L).coerceAtLeast(0L)
     val min       = totalSec / 60
     val sec       = totalSec % 60
@@ -320,36 +351,39 @@ private fun NoAdsBanner(remainingMs: Long, modifier: Modifier = Modifier) {
                 contentAlignment = Alignment.Center
             ) {
                 Icon(
-                    Icons.Outlined.Block, null,
+                    if (isPremium) Icons.Rounded.WorkspacePremium else Icons.Outlined.Block, null,
                     modifier = Modifier.size(16.dp),
                     tint     = Color(0xFF2E7D32)
                 )
             }
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    "No Ads Aktif",
+                    if (isPremium) "Premium Aktif" else "No Ads Aktif",
                     style      = MaterialTheme.typography.labelMedium,
                     fontWeight = FontWeight.SemiBold,
                     color      = Color(0xFF2E7D32)
                 )
                 Text(
-                    "Iklan dinonaktifkan · sisa $timeLabel",
+                    if (isPremium) "Iklan dinonaktifkan selamanya"
+                    else "Iklan dinonaktifkan · sisa $timeLabel",
                     style = MaterialTheme.typography.labelSmall,
                     color = Color(0xFF43A047)
                 )
             }
-            // Progress ring visual sederhana
-            Surface(
-                shape = RoundedCornerShape(8.dp),
-                color = Color(0xFF43A047).copy(alpha = 0.18f)
-            ) {
-                Text(
-                    timeLabel,
-                    style      = MaterialTheme.typography.labelMedium,
-                    fontWeight = FontWeight.Bold,
-                    color      = Color(0xFF2E7D32),
-                    modifier   = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
-                )
+            // Progress ring visual sederhana — hanya relevan untuk mode rewarded
+            if (!isPremium) {
+                Surface(
+                    shape = RoundedCornerShape(8.dp),
+                    color = Color(0xFF43A047).copy(alpha = 0.18f)
+                ) {
+                    Text(
+                        timeLabel,
+                        style      = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.Bold,
+                        color      = Color(0xFF2E7D32),
+                        modifier   = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
+                    )
+                }
             }
         }
     }

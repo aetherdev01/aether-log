@@ -18,10 +18,13 @@ import com.aether.lv.ads.AdBlockManager
 import com.aether.lv.ads.AdsManager
 import com.aether.lv.ads.RewardedNoAdsManager
 import com.aether.lv.data.preferences.ThemePreferences
+import com.aether.lv.license.LicenseRepository
 import com.aether.lv.permission.PermissionManager
 import com.aether.lv.permission.PermissionRationaleDialog
 import com.aether.lv.ui.LogLogApp
 import com.aether.lv.ui.theme.LogLogTheme
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.runBlocking
 
 class MainActivity : ComponentActivity() {
 
@@ -29,6 +32,8 @@ class MainActivity : ComponentActivity() {
 
     private var showPermissionDialog     by mutableStateOf(false)
     private var showManageStorageDialog  by mutableStateOf(false)
+
+    private val licenseRepository by lazy { LicenseRepository(applicationContext) }
 
     private val requestPermissionLauncher =
         registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { _ -> }
@@ -45,7 +50,7 @@ class MainActivity : ComponentActivity() {
 
         requestStoragePermissionIfNeeded()
 
-        AdBlockManager.startDetection(this)
+        AdBlockManager.startDetection(this, skipForPremium = isPremiumNoAds())
 
         val themePrefs = ThemePreferences(this)
 
@@ -130,10 +135,25 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    /**
+     * Defense-in-depth: walau gating utama sudah dilakukan di level Composable
+     * (HomeScreen/SettingsScreen tidak akan memanggil onShowInterstitial saat premium aktif),
+     * cek ulang di sini supaya interstitial tidak pernah tampil untuk user yang sudah
+     * mengaktifkan lisensi no_ads, terlepas dari jalur pemanggilan manapun.
+     */
+    private fun isPremiumNoAds(): Boolean = runBlocking {
+        runCatching { licenseRepository.licenseState.first().isNoAds }.getOrDefault(false)
+    }
+
     fun showInterstitialAd(
         onComplete: () -> Unit = {},
         onFailed  : (String) -> Unit = {}
     ) {
+        if (isPremiumNoAds()) {
+            // Lisensi premium aktif — langsung jalankan aksi tanpa menampilkan iklan.
+            onComplete()
+            return
+        }
         AdsManager.showInterstitial(
             activity   = this,
             onComplete = onComplete,
@@ -162,6 +182,11 @@ class MainActivity : ComponentActivity() {
      * - Iklan gagal ditampilkan (network error, dll) → Toast gagal
      */
     private fun showRewardedAdWithToast() {
+        if (isPremiumNoAds()) {
+            Toast.makeText(this, "Premium aktif — iklan sudah dinonaktifkan", Toast.LENGTH_SHORT).show()
+            return
+        }
+
         // Belum siap sama sekali (SDK belum init / belum ada ad yang dimuat)
         if (!AdsManager.rewardedReady.value) {
             Toast.makeText(this, "Iklan Belum Tersedia", Toast.LENGTH_SHORT).show()

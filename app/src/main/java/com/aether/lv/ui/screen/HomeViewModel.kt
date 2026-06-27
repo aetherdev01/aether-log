@@ -6,6 +6,7 @@ import androidx.lifecycle.viewModelScope
 import com.aether.lv.LogLogApplication
 import com.aether.lv.data.model.RecentFile
 import com.aether.lv.data.repository.FileRepository
+import com.aether.lv.license.LicenseViewModel
 import com.aether.lv.update.UpdateViewModel
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -19,7 +20,8 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         dao     = (application as LogLogApplication).database.recentFileDao()
     )
 
-    val updateVm = UpdateViewModel(application)
+    val updateVm  = UpdateViewModel(application)
+    val licenseVm = LicenseViewModel(application)
 
     val recentFiles: StateFlow<List<RecentFile>> =
         repo.recentFiles.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())

@@ -15,6 +15,7 @@ import com.aether.lv.data.preferences.ThemePreferences
 import com.aether.lv.ui.screen.AboutScreen
 import com.aether.lv.ui.screen.EditorScreen
 import com.aether.lv.ui.screen.HomeScreen
+import com.aether.lv.ui.screen.LicenseScreen
 import com.aether.lv.ui.screen.SettingsScreen
 import com.aether.lv.ui.screen.ViewerScreen
 
@@ -24,6 +25,7 @@ sealed class Screen(val route: String) {
     object Editor   : Screen("editor")
     object Settings : Screen("settings")
     object About    : Screen("about")
+    object License  : Screen("license")
 }
 
 private const val NAV_ANIM_MS = 320
@@ -96,6 +98,7 @@ fun LogLogApp(
                 },
                 onSettings         = { navController.navigate(Screen.Settings.route) },
                 onAbout            = { navController.navigate(Screen.About.route) },
+                onOpenLicense      = { navController.navigate(Screen.License.route) },
                 onShowInterstitial = onShowInterstitial
             )
         }
@@ -122,16 +125,21 @@ fun LogLogApp(
 
         composable(Screen.Settings.route) {
             SettingsScreen(
-                themePrefs          = themePrefs,
-                onBack              = { navController.popBackStack() },
-                onRequestPermission = onRequestPermission,
-                onShowInterstitial  = onShowInterstitial,
-                onShowRewarded      = onShowRewarded,
+                themePrefs                = themePrefs,
+                onBack                    = { navController.popBackStack() },
+                onRequestPermission       = onRequestPermission,
+                onShowInterstitial        = onShowInterstitial,
+                onShowRewarded            = onShowRewarded,
+                onOpenLicenseFromSettings = { navController.navigate(Screen.License.route) },
             )
         }
 
         composable(Screen.About.route) {
             AboutScreen(onBack = { navController.popBackStack() })
+        }
+
+        composable(Screen.License.route) {
+            LicenseScreen(onBack = { navController.popBackStack() })
         }
     }
 

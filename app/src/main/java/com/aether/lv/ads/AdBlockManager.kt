@@ -57,8 +57,16 @@ object AdBlockManager {
      * Mulai deteksi AdBlock.
      * Panggil dari MainActivity.onCreate().
      * Idempotent — tidak akan double-detect berkat [detectionStarted] flag.
+     *
+     * @param skipForPremium jika true (user sudah punya lisensi no_ads aktif),
+     *        deteksi tidak dijalankan sama sekali — dialog AdBlock hanya relevan
+     *        untuk user yang seharusnya melihat iklan tapi memblokirnya secara diam-diam.
      */
-    fun startDetection(context: Context) {
+    fun startDetection(context: Context, skipForPremium: Boolean = false) {
+        if (skipForPremium) {
+            Log.d(TAG, "Skip AdBlock detection — premium license active")
+            return
+        }
         if (detectionStarted) {
             Log.d(TAG, "Detection already scheduled, skip")
             return

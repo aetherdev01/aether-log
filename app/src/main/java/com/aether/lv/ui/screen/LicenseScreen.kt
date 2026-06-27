@@ -420,10 +420,10 @@ private fun FeatureListCard() {
                 style      = MaterialTheme.typography.titleSmall,
                 fontWeight = FontWeight.SemiBold
             )
-            FeatureRow(Icons.Outlined.Block,          "Tanpa iklan banner & interstitial")
+            FeatureRow(Icons.Outlined.Block,          "Tanpa iklan interstitial & rewarded")
             FeatureRow(Icons.Outlined.Speed,          "Pengalaman lebih cepat & mulus")
             FeatureRow(Icons.Outlined.SupportAgent,   "Dukungan prioritas via Telegram")
-            FeatureRow(Icons.Outlined.AllInclusive,   "Berlaku untuk 1 perangkat")
+            FeatureRow(Icons.Outlined.PhoneAndroid,   "Berlaku sesuai jumlah perangkat di paket")
         }
     }
 }

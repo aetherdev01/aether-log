@@ -11,7 +11,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.WrapText
 import androidx.compose.material.icons.outlined.*
-import androidx.compose.material.icons.rounded.ArrowBack
+import androidx.compose.material.icons.rounded.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -37,12 +37,13 @@ import kotlinx.coroutines.launch
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SettingsScreen(
-    themePrefs          : ThemePreferences,
-    onBack              : () -> Unit,
-    onRequestPermission : () -> Unit = {},
-    onShowInterstitial  : (() -> Unit) -> Unit = { it() },
-    onShowRewarded      : () -> Unit = {},
-    homeVm              : HomeViewModel = viewModel()
+    themePrefs                : ThemePreferences,
+    onBack                    : () -> Unit,
+    onRequestPermission       : () -> Unit = {},
+    onShowInterstitial        : (() -> Unit) -> Unit = { it() },
+    onShowRewarded            : () -> Unit = {},
+    onOpenLicenseFromSettings : () -> Unit = {},
+    homeVm                    : HomeViewModel = viewModel()
 ) {
     val isDark      by themePrefs.isDarkMode.collectAsState(initial = false)
     val isDynamic   by themePrefs.isDynamicColor.collectAsState(initial = true)
@@ -50,6 +51,7 @@ fun SettingsScreen(
     val showNums    by themePrefs.showLineNumbers.collectAsState(initial = true)
     val showColors  by themePrefs.showLogColors.collectAsState(initial = true)
     val updateState  by homeVm.updateVm.state.collectAsStateWithLifecycle()
+    val licenseState by homeVm.licenseVm.licenseState.collectAsStateWithLifecycle()
     val noAdsState   by RewardedNoAdsManager.state.collectAsStateWithLifecycle()
     val rewardedReady by AdsManager.rewardedReady.collectAsStateWithLifecycle()
     val scope        = rememberCoroutineScope()
@@ -65,12 +67,14 @@ fun SettingsScreen(
     }
     val remainingMs   = (noAdsState.noAdsUntil - tickMs).coerceAtLeast(0L)
     val isNoAdsActive = remainingMs > 0L
+    // Premium dari lisensi mematikan iklan secara permanen.
+    val isPremium     = licenseState.isNoAds
 
     var toggleCount by remember { mutableIntStateOf(0) }
 
     fun doToggle(applyPref: () -> Unit) {
         toggleCount++
-        if (toggleCount % 3 == 0 && AdsManager.interstitialReady.value) {
+        if (!isPremium && toggleCount % 3 == 0 && AdsManager.interstitialReady.value) {
             onShowInterstitial { applyPref() }
         } else {
             applyPref()
@@ -133,16 +137,23 @@ fun SettingsScreen(
             verticalArrangement = Arrangement.spacedBy(6.dp),
         ) {
 
-            // ── No Ads Rewarded ─────────────────────────────────────────────
+            // ── No Ads: Premium (lisensi) atau Rewarded (sementara) ──────────
             item {
-                NoAdsRewardedCard(
-                    isActive       = isNoAdsActive,
-                    remainingMs    = remainingMs,
-                    remainingClaims = noAdsState.remainingClaims,
-                    canWatch       = noAdsState.canWatchRewarded,
-                    rewardedReady  = rewardedReady,
-                    onWatch        = { handleWatchRewarded() },
-                )
+                if (isPremium) {
+                    PremiumActiveSettingsCard(
+                        productName = licenseState.productName,
+                        onManage    = onOpenLicenseFromSettings
+                    )
+                } else {
+                    NoAdsRewardedCard(
+                        isActive       = isNoAdsActive,
+                        remainingMs    = remainingMs,
+                        remainingClaims = noAdsState.remainingClaims,
+                        canWatch       = noAdsState.canWatchRewarded,
+                        rewardedReady  = rewardedReady,
+                        onWatch        = { handleWatchRewarded() },
+                    )
+                }
             }
 
             item { Spacer(Modifier.height(6.dp)) }
@@ -237,7 +248,7 @@ fun SettingsScreen(
                             else                           -> "Ketuk untuk memeriksa · v${BuildConfig.VERSION_NAME}"
                         },
                         onClick  = {
-                            if (AdsManager.interstitialReady.value)
+                            if (!isPremium && AdsManager.interstitialReady.value)
                                 onShowInterstitial { homeVm.updateVm.checkForUpdate(force = true) }
                             else
                                 homeVm.updateVm.checkForUpdate(force = true)
@@ -272,6 +283,66 @@ fun SettingsScreen(
             }
 
             item { Spacer(Modifier.height(20.dp)) }
+        }
+    }
+}
+
+// ── Premium Active Card (lisensi no_ads aktif) ─────────────────────────────────
+
+@Composable
+private fun PremiumActiveSettingsCard(
+    productName : String,
+    onManage    : () -> Unit,
+) {
+    val gold = Color(0xFFFFB300)
+
+    Surface(
+        shape    = RoundedCornerShape(20.dp),
+        color    = MaterialTheme.colorScheme.primaryContainer,
+        modifier = Modifier.fillMaxWidth(),
+        onClick  = onManage,
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 18.dp, vertical = 16.dp),
+            verticalAlignment     = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(14.dp)
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(44.dp)
+                    .clip(RoundedCornerShape(14.dp))
+                    .background(gold.copy(alpha = 0.18f)),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    Icons.Rounded.WorkspacePremium, null,
+                    modifier = Modifier.size(22.dp),
+                    tint     = gold
+                )
+            }
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    "Premium Aktif",
+                    style      = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.Bold,
+                    color      = MaterialTheme.colorScheme.onPrimaryContainer
+                )
+                Spacer(Modifier.height(2.dp))
+                Text(
+                    text = if (productName.isNotBlank()) "$productName · Iklan dinonaktifkan selamanya"
+                           else "Iklan dinonaktifkan selamanya",
+                    style    = MaterialTheme.typography.bodySmall,
+                    color    = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.75f),
+                    maxLines = 1,
+                )
+            }
+            Icon(
+                Icons.Outlined.ChevronRight, null,
+                modifier = Modifier.size(18.dp),
+                tint     = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.6f)
+            )
         }
     }
 }
