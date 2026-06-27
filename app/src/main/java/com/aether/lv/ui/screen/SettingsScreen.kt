@@ -136,34 +136,36 @@ fun SettingsScreen(
         ) {
 
             // ── No Ads & Lisensi ──────────────────────────────────────────────
-            item { SectionLabel("Ads & Lisensi") }
             item {
-                SettingsCard {
-                    if (isPremium) {
-                        LicenseStatusRow(
-                            isFirst     = true,
-                            isLast      = true,
-                            productName = licenseState.productName,
-                            onClick     = onOpenLicenseFromSettings,
-                        )
-                    } else {
-                        NoAdsRewardedRow(
-                            isActive        = isNoAdsActive,
-                            remainingMs     = remainingMs,
-                            remainingClaims = noAdsState.remainingClaims,
-                            canWatch        = noAdsState.canWatchRewarded,
-                            rewardedReady   = rewardedReady,
-                            onWatch         = { handleWatchRewarded() },
-                            isFirst         = true,
-                            isLast          = false,
-                        )
-                        RowDivider()
-                        LicenseStatusRow(
-                            isFirst     = false,
-                            isLast      = true,
-                            productName = licenseState.productName,
-                            onClick     = onOpenLicenseFromSettings,
-                        )
+                Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    SectionLabel("Ads & Lisensi")
+                    SettingsCard {
+                        if (isPremium) {
+                            LicenseStatusRow(
+                                isFirst     = true,
+                                isLast      = true,
+                                productName = licenseState.productName,
+                                onClick     = onOpenLicenseFromSettings,
+                            )
+                        } else {
+                            NoAdsRewardedRow(
+                                isActive        = isNoAdsActive,
+                                remainingMs     = remainingMs,
+                                remainingClaims = noAdsState.remainingClaims,
+                                canWatch        = noAdsState.canWatchRewarded,
+                                rewardedReady   = rewardedReady,
+                                onWatch         = { handleWatchRewarded() },
+                                isFirst         = true,
+                                isLast          = false,
+                            )
+                            RowDivider()
+                            LicenseStatusRow(
+                                isFirst     = false,
+                                isLast      = true,
+                                productName = licenseState.productName,
+                                onClick     = onOpenLicenseFromSettings,
+                            )
+                        }
                     }
                 }
             }
