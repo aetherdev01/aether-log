@@ -49,6 +49,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.aether.lv.util.SyntaxType
 import kotlinx.coroutines.launch
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -308,6 +309,25 @@ private fun EditorTopBar(
                             leadingIcon = { Icon(Icons.Outlined.Tag, null) },
                             onClick = { showMenu = false; vm.toggleLineNumbers() }
                         )
+                        DropdownMenuItem(
+                            text = {
+                                Column {
+                                    Text(
+                                        if (state.syntaxEnabled) "Nonaktifkan Syntax Highlight"
+                                        else "Aktifkan Syntax Highlight"
+                                    )
+                                    if (state.syntaxType.name != "NONE") {
+                                        Text(
+                                            "Format: ${state.syntaxType.name}",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        )
+                                    }
+                                }
+                            },
+                            leadingIcon = { Icon(Icons.Outlined.ColorLens, null) },
+                            onClick = { showMenu = false; vm.toggleSyntaxHighlight() }
+                        )
                         // Font size submenu (inline slider approach)
                         DropdownMenuItem(
                             text = {
@@ -430,26 +450,66 @@ private fun EditorBody(
                 .padding(horizontal = 8.dp, vertical = 8.dp)
         }
 
-        BasicTextField(
-            value         = state.textField,
-            onValueChange = onChange,
-            modifier      = fieldModifier
-                .focusRequester(focusReq)
-                .fillMaxWidth(),
-            textStyle = TextStyle(
-                fontFamily = FontFamily.Monospace,
-                fontSize   = fontSizeSp,
-                lineHeight = lineHeightSp,
-                color      = textColor,
-            ),
-            cursorBrush   = SolidColor(cursorColor),
-            keyboardOptions = KeyboardOptions(
-                capitalization = KeyboardCapitalization.None,
-                autoCorrect    = false,
-                keyboardType   = KeyboardType.Ascii,
-            ),
-            decorationBox = { inner -> inner() }
-        )
+        // Jika ada highlighted text dan panjang cocok → pakai AnnotatedString
+        val highlighted = state.highlightedText
+        val useHighlight = highlighted != null &&
+            highlighted.text.length == state.textField.text.length &&
+            state.syntaxEnabled
+
+        if (useHighlight && highlighted != null) {
+            // Mode highlight: TextFieldValue dibuat dari AnnotatedString
+            val highlightedTfv = remember(highlighted, state.textField.selection, state.textField.composition) {
+                TextFieldValue(
+                    annotatedString = highlighted,
+                    selection       = state.textField.selection,
+                )
+            }
+            BasicTextField(
+                value         = highlightedTfv,
+                onValueChange = { new ->
+                    // Forward ke ViewModel dengan plain TextFieldValue (teks saja)
+                    onChange(TextFieldValue(new.text, new.selection, new.composition))
+                },
+                modifier      = fieldModifier
+                    .focusRequester(focusReq)
+                    .fillMaxWidth(),
+                textStyle = TextStyle(
+                    fontFamily = FontFamily.Monospace,
+                    fontSize   = fontSizeSp,
+                    lineHeight = lineHeightSp,
+                    color      = textColor,
+                ),
+                cursorBrush   = SolidColor(cursorColor),
+                keyboardOptions = KeyboardOptions(
+                    capitalization = KeyboardCapitalization.None,
+                    autoCorrect    = false,
+                    keyboardType   = KeyboardType.Ascii,
+                ),
+                decorationBox = { inner -> inner() }
+            )
+        } else {
+            // Mode plain (highlight belum tersedia / disabled / terlalu besar)
+            BasicTextField(
+                value         = state.textField,
+                onValueChange = onChange,
+                modifier      = fieldModifier
+                    .focusRequester(focusReq)
+                    .fillMaxWidth(),
+                textStyle = TextStyle(
+                    fontFamily = FontFamily.Monospace,
+                    fontSize   = fontSizeSp,
+                    lineHeight = lineHeightSp,
+                    color      = textColor,
+                ),
+                cursorBrush   = SolidColor(cursorColor),
+                keyboardOptions = KeyboardOptions(
+                    capitalization = KeyboardCapitalization.None,
+                    autoCorrect    = false,
+                    keyboardType   = KeyboardType.Ascii,
+                ),
+                decorationBox = { inner -> inner() }
+            )
+        }
     }
 }
 
@@ -830,6 +890,28 @@ private fun EditorStatusBar(state: EditorUiState) {
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
+            // Badge format syntax
+            if (state.syntaxType != SyntaxType.NONE) {
+                val badgeColor = if (state.syntaxEnabled)
+                    MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)
+                else
+                    MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.10f)
+                val textColor = if (state.syntaxEnabled)
+                    MaterialTheme.colorScheme.primary
+                else
+                    MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+                Surface(
+                    color  = badgeColor,
+                    shape  = RoundedCornerShape(4.dp),
+                ) {
+                    Text(
+                        text     = state.syntaxType.name,
+                        style    = MaterialTheme.typography.labelSmall,
+                        color    = textColor,
+                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                    )
+                }
+            }
         }
     }
 }

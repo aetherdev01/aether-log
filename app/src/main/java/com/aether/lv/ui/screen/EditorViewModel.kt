@@ -3,6 +3,7 @@ package com.aether.lv.ui.screen
 import android.app.Application
 import android.net.Uri
 import android.provider.OpenableColumns
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.lifecycle.AndroidViewModel
@@ -10,6 +11,9 @@ import androidx.lifecycle.viewModelScope
 import com.aether.lv.LogLogApplication
 import com.aether.lv.data.repository.FileRepository
 import com.aether.lv.util.GzipUtil
+import com.aether.lv.util.SyntaxHighlighter
+import com.aether.lv.util.SyntaxType
+import com.aether.lv.util.syntaxTypeOf
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -44,6 +48,11 @@ data class EditorUiState(
     val isSaving         : Boolean        = false,
     val isDirty          : Boolean        = false,   // ada perubahan belum disimpan
     val error            : String?        = null,
+
+    // Syntax highlighting
+    val highlightedText  : AnnotatedString? = null,  // null = belum ada / disabled
+    val syntaxType       : SyntaxType     = SyntaxType.NONE,
+    val syntaxEnabled    : Boolean        = true,
 
     // Undo / Redo
     val canUndo          : Boolean        = false,
@@ -82,8 +91,9 @@ data class EditorUiState(
 
 enum class Base64Mode { ENCODE, DECODE }
 
-private const val UNDO_DEBOUNCE_MS  = 400L
-private const val UNDO_HISTORY_MAX  = 200
+private const val UNDO_DEBOUNCE_MS      = 400L
+private const val UNDO_HISTORY_MAX      = 200
+private const val HIGHLIGHT_DEBOUNCE_MS = 300L
 
 class EditorViewModel(application: Application) : AndroidViewModel(application) {
 
@@ -100,6 +110,7 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
     private val redoStack = ArrayDeque<TextSnapshot>()
     private var lastPushedText = ""
     private var undoDebounceJob: Job? = null
+    private var highlightJob: Job? = null
 
     // ── URI yang dibuka ───────────────────────────────────────────────────────
     private var currentUri: Uri? = null
@@ -118,7 +129,8 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
         if (activityContext != null) savedActivityCtx = activityContext
 
         viewModelScope.launch {
-            _state.update { it.copy(isLoading = true, error = null, fileName = fileName) }
+            val syntax = syntaxTypeOf(fileName)
+            _state.update { it.copy(isLoading = true, error = null, fileName = fileName, syntaxType = syntax) }
 
             repo.readLines(uri, maxLines = 100_000, activityContext = activityContext)
                 .onSuccess { lines ->
@@ -135,6 +147,8 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
                             canRedo     = false,
                         ).withStats()
                     }
+                    // Highlight setelah teks dimuat
+                    scheduleHighlight(fullText, syntax)
                 }
                 .onFailure { e ->
                     _state.update { it.copy(isLoading = false, error = e.message) }
@@ -173,6 +187,14 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
                 canUndo   = undoStack.isNotEmpty(),
             ).withStats()
         }
+
+        // Re-highlight dengan debounce saat teks berubah
+        if (textChanged) {
+            val syntax = _state.value.syntaxType
+            if (syntax != SyntaxType.NONE && _state.value.syntaxEnabled) {
+                scheduleHighlight(new.text, syntax)
+            }
+        }
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -188,6 +210,34 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
                 lastPushedText = snapshot.text
             }
         }
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Syntax Highlighting
+    // ─────────────────────────────────────────────────────────────────────────
+
+    private fun scheduleHighlight(text: String, type: SyntaxType) {
+        if (!_state.value.syntaxEnabled || type == SyntaxType.NONE) return
+        highlightJob?.cancel()
+        highlightJob = viewModelScope.launch {
+            // Debounce: tunggu ketikan berhenti
+            delay(HIGHLIGHT_DEBOUNCE_MS)
+            val annotated = withContext(Dispatchers.Default) {
+                SyntaxHighlighter.highlight(text, type)
+            }
+            _state.update { it.copy(highlightedText = annotated) }
+        }
+    }
+
+    fun toggleSyntaxHighlight() {
+        val enabled = !_state.value.syntaxEnabled
+        _state.update { it.copy(syntaxEnabled = enabled, highlightedText = null) }
+        if (enabled) {
+            val text   = _state.value.textField.text
+            val syntax = _state.value.syntaxType
+            scheduleHighlight(text, syntax)
+        }
+        snack(if (enabled) "Syntax highlight aktif" else "Syntax highlight nonaktif")
     }
 
     private fun pushUndo(snap: TextSnapshot) {
