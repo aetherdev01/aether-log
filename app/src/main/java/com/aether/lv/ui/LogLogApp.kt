@@ -98,7 +98,6 @@ fun LogLogApp(
                 },
                 onSettings         = { navController.navigate(Screen.Settings.route) },
                 onAbout            = { navController.navigate(Screen.About.route) },
-                onOpenLicense      = { navController.navigate(Screen.License.route) },
                 onShowInterstitial = onShowInterstitial
             )
         }

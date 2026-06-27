@@ -175,7 +175,7 @@ class MainActivity : ComponentActivity() {
     }
 
     /**
-     * Tonton rewarded ad dari Settings (tombol "No Ads 30 Menit").
+     * Tonton rewarded ad dari Settings (tombol "No Ads 5 Menit").
      * Menampilkan Toast untuk setiap kemungkinan hasil:
      * - Iklan belum tersedia / belum siap dimuat → "Iklan Belum Tersedia"
      * - Iklan siap & berhasil ditonton sampai selesai → reward diberikan + Toast sukses
@@ -197,9 +197,9 @@ class MainActivity : ComponentActivity() {
 
         showRewardedAd(
             onRewarded = {
-                val granted = RewardedNoAdsManager.grant30Minutes()
+                val granted = RewardedNoAdsManager.grant5Minutes()
                 if (granted) {
-                    Toast.makeText(this, "Berhasil! Bebas iklan 30 menit aktif", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(this, "Berhasil! Bebas iklan 5 menit aktif", Toast.LENGTH_SHORT).show()
                 } else {
                     Toast.makeText(this, "Batas harian tercapai", Toast.LENGTH_SHORT).show()
                 }

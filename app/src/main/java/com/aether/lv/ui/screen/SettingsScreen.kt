@@ -4,7 +4,6 @@ import android.widget.Toast
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -17,7 +16,6 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
@@ -133,453 +131,170 @@ fun SettingsScreen(
     ) { innerPadding ->
         LazyColumn(
             modifier            = Modifier.fillMaxSize().padding(innerPadding),
-            contentPadding      = PaddingValues(horizontal = 16.dp, vertical = 14.dp),
-            verticalArrangement = Arrangement.spacedBy(6.dp),
+            contentPadding      = PaddingValues(horizontal = 16.dp, vertical = 16.dp),
+            verticalArrangement = Arrangement.spacedBy(20.dp),
         ) {
 
-            // ── No Ads: Premium (lisensi) atau Rewarded (sementara) ──────────
+            // ── No Ads & Lisensi ──────────────────────────────────────────────
+            item { SectionLabel("No Ads & Lisensi") }
             item {
-                if (isPremium) {
-                    PremiumActiveSettingsCard(
-                        productName = licenseState.productName,
-                        onManage    = onOpenLicenseFromSettings
-                    )
-                } else {
-                    NoAdsRewardedCard(
-                        isActive       = isNoAdsActive,
-                        remainingMs    = remainingMs,
-                        remainingClaims = noAdsState.remainingClaims,
-                        canWatch       = noAdsState.canWatchRewarded,
-                        rewardedReady  = rewardedReady,
-                        onWatch        = { handleWatchRewarded() },
-                    )
+                SettingsCard {
+                    if (isPremium) {
+                        LicenseStatusRow(
+                            isFirst     = true,
+                            isLast      = true,
+                            productName = licenseState.productName,
+                            onClick     = onOpenLicenseFromSettings,
+                        )
+                    } else {
+                        NoAdsRewardedRow(
+                            isActive        = isNoAdsActive,
+                            remainingMs     = remainingMs,
+                            remainingClaims = noAdsState.remainingClaims,
+                            canWatch        = noAdsState.canWatchRewarded,
+                            rewardedReady   = rewardedReady,
+                            onWatch         = { handleWatchRewarded() },
+                            isFirst         = true,
+                            isLast          = false,
+                        )
+                        RowDivider()
+                        LicenseStatusRow(
+                            isFirst     = false,
+                            isLast      = true,
+                            productName = licenseState.productName,
+                            onClick     = onOpenLicenseFromSettings,
+                        )
+                    }
                 }
             }
-
-            item { Spacer(Modifier.height(6.dp)) }
 
             // ── Tampilan ────────────────────────────────────────────────────
-            item { SectionLabel("Tampilan") }
             item {
-                SettingsCard {
-                    val modeIcon = if (isDark) Icons.Outlined.DarkMode else Icons.Outlined.LightMode
-                    val modeTint = if (isDark) Color(0xFF9FA8DA) else Color(0xFFFFA726)
-                    SettingsToggleItem(
-                        icon      = modeIcon,
-                        iconTint  = modeTint,
-                        title     = "Mode Gelap",
-                        subtitle  = if (isDark) "Tema gelap aktif" else "Tema terang aktif",
-                        checked   = isDark,
-                        onChecked = { v -> doToggle { scope.launch { themePrefs.setDarkMode(v) } } },
-                        isFirst   = true,
-                        isLast    = false,
-                    )
-                    RowDivider()
-                    SettingsToggleItem(
-                        icon      = Icons.Outlined.AutoAwesome,
-                        iconTint  = MaterialTheme.colorScheme.primary,
-                        title     = "Material You",
-                        subtitle  = "Warna dinamis dari wallpaper (Android 12+)",
-                        checked   = isDynamic,
-                        onChecked = { v -> doToggle { scope.launch { themePrefs.setDynamicColor(v) } } },
-                        isFirst   = false,
-                        isLast    = true,
-                    )
+                Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    SectionLabel("Tampilan")
+                    SettingsCard {
+                        val modeIcon = if (isDark) Icons.Outlined.DarkMode else Icons.Outlined.LightMode
+                        val modeTint = if (isDark) Color(0xFF9FA8DA) else Color(0xFFFFA726)
+                        SettingsToggleItem(
+                            icon      = modeIcon,
+                            iconTint  = modeTint,
+                            title     = "Mode Gelap",
+                            subtitle  = if (isDark) "Tema gelap aktif" else "Tema terang aktif",
+                            checked   = isDark,
+                            onChecked = { v -> doToggle { scope.launch { themePrefs.setDarkMode(v) } } },
+                            isFirst   = true,
+                            isLast    = false,
+                        )
+                        RowDivider()
+                        SettingsToggleItem(
+                            icon      = Icons.Outlined.AutoAwesome,
+                            iconTint  = MaterialTheme.colorScheme.primary,
+                            title     = "Material You",
+                            subtitle  = "Warna dinamis dari wallpaper (Android 12+)",
+                            checked   = isDynamic,
+                            onChecked = { v -> doToggle { scope.launch { themePrefs.setDynamicColor(v) } } },
+                            isFirst   = false,
+                            isLast    = true,
+                        )
+                    }
                 }
             }
-
-            item { Spacer(Modifier.height(2.dp)) }
 
             // ── Viewer Log ──────────────────────────────────────────────────
-            item { SectionLabel("Viewer Log") }
             item {
-                SettingsCard {
-                    SettingsToggleItem(
-                        icon      = Icons.Outlined.ColorLens,
-                        iconTint  = Color(0xFF43A047),
-                        title     = "Warna Level Log",
-                        subtitle  = "Warnai baris sesuai level (debug, info, error...)",
-                        checked   = showColors,
-                        onChecked = { v -> doToggle { scope.launch { themePrefs.setShowLogColors(v) } } },
-                        isFirst   = true,
-                        isLast    = false,
-                    )
-                    RowDivider()
-                    SettingsToggleItem(
-                        icon      = Icons.Outlined.Tag,
-                        iconTint  = MaterialTheme.colorScheme.secondary,
-                        title     = "Nomor Baris",
-                        subtitle  = "Tampilkan nomor di gutter kiri",
-                        checked   = showNums,
-                        onChecked = { v -> doToggle { scope.launch { themePrefs.setShowLineNumbers(v) } } },
-                        isFirst   = false,
-                        isLast    = false,
-                    )
-                    RowDivider()
-                    SettingsToggleItem(
-                        icon      = Icons.AutoMirrored.Outlined.WrapText,
-                        iconTint  = MaterialTheme.colorScheme.tertiary,
-                        title     = "Word Wrap",
-                        subtitle  = "Bungkus baris yang terlalu panjang",
-                        checked   = wrapLines,
-                        onChecked = { v -> doToggle { scope.launch { themePrefs.setWrapLines(v) } } },
-                        isFirst   = false,
-                        isLast    = true,
-                    )
+                Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    SectionLabel("Viewer Log")
+                    SettingsCard {
+                        SettingsToggleItem(
+                            icon      = Icons.Outlined.ColorLens,
+                            iconTint  = MaterialTheme.colorScheme.tertiary,
+                            title     = "Warna Level Log",
+                            subtitle  = "Warnai baris sesuai level (debug, info, error...)",
+                            checked   = showColors,
+                            onChecked = { v -> doToggle { scope.launch { themePrefs.setShowLogColors(v) } } },
+                            isFirst   = true,
+                            isLast    = false,
+                        )
+                        RowDivider()
+                        SettingsToggleItem(
+                            icon      = Icons.Outlined.Tag,
+                            iconTint  = MaterialTheme.colorScheme.secondary,
+                            title     = "Nomor Baris",
+                            subtitle  = "Tampilkan nomor di gutter kiri",
+                            checked   = showNums,
+                            onChecked = { v -> doToggle { scope.launch { themePrefs.setShowLineNumbers(v) } } },
+                            isFirst   = false,
+                            isLast    = false,
+                        )
+                        RowDivider()
+                        SettingsToggleItem(
+                            icon      = Icons.AutoMirrored.Outlined.WrapText,
+                            iconTint  = MaterialTheme.colorScheme.primary,
+                            title     = "Word Wrap",
+                            subtitle  = "Bungkus baris yang terlalu panjang",
+                            checked   = wrapLines,
+                            onChecked = { v -> doToggle { scope.launch { themePrefs.setWrapLines(v) } } },
+                            isFirst   = false,
+                            isLast    = true,
+                        )
+                    }
                 }
             }
-
-            item { Spacer(Modifier.height(2.dp)) }
 
             // ── Sistem ──────────────────────────────────────────────────────
-            item { SectionLabel("Sistem") }
             item {
-                SettingsCard {
-                    val hasUpdate = updateState.updateInfo?.isNewVersion == true
-                    SettingsActionItem(
-                        icon     = if (hasUpdate) Icons.Outlined.SystemUpdate else Icons.Outlined.Refresh,
-                        iconTint = if (hasUpdate) MaterialTheme.colorScheme.primary
-                                   else MaterialTheme.colorScheme.onSurfaceVariant,
-                        title    = "Cek Pembaruan",
-                        subtitle = when {
-                            updateState.isChecking         -> "Memeriksa…"
-                            hasUpdate                      -> "v${updateState.updateInfo!!.latestVersion} tersedia!"
-                            updateState.updateInfo != null -> "Versi terbaru · v${BuildConfig.VERSION_NAME}"
-                            else                           -> "Ketuk untuk memeriksa · v${BuildConfig.VERSION_NAME}"
-                        },
-                        onClick  = {
-                            if (!isPremium && AdsManager.interstitialReady.value)
-                                onShowInterstitial { homeVm.updateVm.checkForUpdate(force = true) }
-                            else
-                                homeVm.updateVm.checkForUpdate(force = true)
-                        },
-                        isFirst  = true,
-                        isLast   = true,
-                        endSlot  = {
-                            AnimatedContent(
-                                targetState    = updateState.isChecking to hasUpdate,
-                                transitionSpec = { fadeIn() togetherWith fadeOut() },
-                                label          = "updateBadge",
-                            ) { (checking, update) ->
-                                when {
-                                    checking -> CircularProgressIndicator(
-                                        modifier    = Modifier.size(18.dp),
-                                        strokeWidth = 2.dp,
-                                        color       = MaterialTheme.colorScheme.primary,
-                                    )
-                                    update -> Badge(containerColor = MaterialTheme.colorScheme.error) {
-                                        Text("Baru", style = MaterialTheme.typography.labelSmall)
+                Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    SectionLabel("Sistem")
+                    SettingsCard {
+                        val hasUpdate = updateState.updateInfo?.isNewVersion == true
+                        SettingsActionItem(
+                            icon     = if (hasUpdate) Icons.Outlined.SystemUpdate else Icons.Outlined.Refresh,
+                            iconTint = if (hasUpdate) MaterialTheme.colorScheme.primary
+                                       else MaterialTheme.colorScheme.onSurfaceVariant,
+                            title    = "Cek Pembaruan",
+                            subtitle = when {
+                                updateState.isChecking         -> "Memeriksa…"
+                                hasUpdate                      -> "v${updateState.updateInfo!!.latestVersion} tersedia!"
+                                updateState.updateInfo != null -> "Versi terbaru · v${BuildConfig.VERSION_NAME}"
+                                else                            -> "Ketuk untuk memeriksa · v${BuildConfig.VERSION_NAME}"
+                            },
+                            onClick  = {
+                                if (!isPremium && AdsManager.interstitialReady.value)
+                                    onShowInterstitial { homeVm.updateVm.checkForUpdate(force = true) }
+                                else
+                                    homeVm.updateVm.checkForUpdate(force = true)
+                            },
+                            isFirst  = true,
+                            isLast   = true,
+                            endSlot  = {
+                                AnimatedContent(
+                                    targetState    = updateState.isChecking to hasUpdate,
+                                    transitionSpec = { fadeIn() togetherWith fadeOut() },
+                                    label          = "updateBadge",
+                                ) { (checking, update) ->
+                                    when {
+                                        checking -> CircularProgressIndicator(
+                                            modifier    = Modifier.size(18.dp),
+                                            strokeWidth = 2.dp,
+                                            color       = MaterialTheme.colorScheme.primary,
+                                        )
+                                        update -> Badge(containerColor = MaterialTheme.colorScheme.error) {
+                                            Text("Baru", style = MaterialTheme.typography.labelSmall)
+                                        }
+                                        else -> Icon(
+                                            Icons.Outlined.ChevronRight, null,
+                                            modifier = Modifier.size(18.dp),
+                                            tint     = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        )
                                     }
-                                    else -> Icon(
-                                        Icons.Outlined.ChevronRight, null,
-                                        modifier = Modifier.size(18.dp),
-                                        tint     = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    )
                                 }
                             }
-                        }
-                    )
-                }
-            }
-
-            item { Spacer(Modifier.height(20.dp)) }
-        }
-    }
-}
-
-// ── Premium Active Card (lisensi no_ads aktif) ─────────────────────────────────
-
-@Composable
-private fun PremiumActiveSettingsCard(
-    productName : String,
-    onManage    : () -> Unit,
-) {
-    val gold = Color(0xFFFFB300)
-
-    Surface(
-        shape    = RoundedCornerShape(20.dp),
-        color    = MaterialTheme.colorScheme.primaryContainer,
-        modifier = Modifier.fillMaxWidth(),
-        onClick  = onManage,
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 18.dp, vertical = 16.dp),
-            verticalAlignment     = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(14.dp)
-        ) {
-            Box(
-                modifier = Modifier
-                    .size(44.dp)
-                    .clip(RoundedCornerShape(14.dp))
-                    .background(gold.copy(alpha = 0.18f)),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(
-                    Icons.Rounded.WorkspacePremium, null,
-                    modifier = Modifier.size(22.dp),
-                    tint     = gold
-                )
-            }
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    "Premium Aktif",
-                    style      = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.Bold,
-                    color      = MaterialTheme.colorScheme.onPrimaryContainer
-                )
-                Spacer(Modifier.height(2.dp))
-                Text(
-                    text = if (productName.isNotBlank()) "$productName · Iklan dinonaktifkan selamanya"
-                           else "Iklan dinonaktifkan selamanya",
-                    style    = MaterialTheme.typography.bodySmall,
-                    color    = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.75f),
-                    maxLines = 1,
-                )
-            }
-            Icon(
-                Icons.Outlined.ChevronRight, null,
-                modifier = Modifier.size(18.dp),
-                tint     = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.6f)
-            )
-        }
-    }
-}
-
-// ── No Ads Rewarded Card ──────────────────────────────────────────────────────
-
-@Composable
-private fun NoAdsRewardedCard(
-    isActive        : Boolean,
-    remainingMs     : Long,
-    remainingClaims : Int,
-    canWatch        : Boolean,
-    rewardedReady   : Boolean,
-    onWatch         : () -> Unit,
-) {
-    val activeGreen  = Color(0xFF2E7D32)
-    val lightGreen   = Color(0xFF43A047)
-    val primary      = MaterialTheme.colorScheme.primary
-
-    val accentColor  = if (isActive) lightGreen else primary
-    val totalSec     = (remainingMs / 1000L).coerceAtLeast(0L)
-    val countdownStr = "%02d:%02d".format(totalSec / 60, totalSec % 60)
-
-    // Progress 0..1 dari 30 menit
-    val maxMs        = 30L * 60_000L
-    val progress     = if (isActive) (remainingMs.toFloat() / maxMs).coerceIn(0f, 1f) else 0f
-    val animProgress by animateFloatAsState(
-        targetValue   = progress,
-        animationSpec = tween(800, easing = EaseInOutCubic),
-        label         = "noAdsProgress"
-    )
-
-    Surface(
-        shape    = RoundedCornerShape(20.dp),
-        color    = MaterialTheme.colorScheme.surfaceContainerLow,
-        modifier = Modifier.fillMaxWidth()
-    ) {
-        Column(modifier = Modifier.fillMaxWidth()) {
-
-            // ── Header gradient bar ─────────────────────────────────────────
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(4.dp)
-                    .clip(RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp))
-                    .background(
-                        if (isActive)
-                            Brush.horizontalGradient(
-                                listOf(Color(0xFF43A047), Color(0xFF66BB6A))
-                            )
-                        else
-                            Brush.horizontalGradient(
-                                listOf(
-                                    MaterialTheme.colorScheme.primary.copy(alpha = 0.3f),
-                                    MaterialTheme.colorScheme.primary.copy(alpha = 0.1f)
-                                )
-                            )
-                    )
-            )
-
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 18.dp, vertical = 16.dp),
-                verticalArrangement = Arrangement.spacedBy(14.dp)
-            ) {
-
-                // ── Status row ────────────────────────────────────────────
-                Row(
-                    verticalAlignment     = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    // Icon badge
-                    Box(
-                        modifier = Modifier
-                            .size(44.dp)
-                            .clip(RoundedCornerShape(14.dp))
-                            .background(accentColor.copy(alpha = 0.12f)),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        AnimatedContent(
-                            targetState    = isActive,
-                            transitionSpec = { scaleIn(initialScale = 0.7f) + fadeIn() togetherWith
-                                              scaleOut(targetScale = 0.7f) + fadeOut() },
-                            label          = "noAdsIcon"
-                        ) { active ->
-                            Icon(
-                                imageVector = if (active) Icons.Outlined.Block
-                                              else Icons.Outlined.OndemandVideo,
-                                contentDescription = null,
-                                modifier    = Modifier.size(22.dp),
-                                tint        = if (active) activeGreen else primary
-                            )
-                        }
-                    }
-
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = if (isActive) "No Ads Aktif" else "Bebas Iklan Sementara",
-                            style      = MaterialTheme.typography.titleSmall,
-                            fontWeight = FontWeight.Bold,
-                            color      = if (isActive) activeGreen
-                                         else MaterialTheme.colorScheme.onSurface
-                        )
-                        Spacer(Modifier.height(2.dp))
-                        Text(
-                            text = when {
-                                isActive              -> "Semua iklan dinonaktifkan"
-                                !canWatch             -> "Batas harian tercapai · reset tengah malam"
-                                !rewardedReady        -> "Memuat iklan, harap tunggu…"
-                                else                  -> "Tonton 1 iklan · bebas iklan 30 menit"
-                            },
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-
-                    // Kuota chip
-                    AnimatedContent(
-                        targetState    = remainingClaims,
-                        transitionSpec = { fadeIn() togetherWith fadeOut() },
-                        label          = "quotaChip"
-                    ) { q ->
-                        Surface(
-                            shape = RoundedCornerShape(10.dp),
-                            color = when {
-                                q == 0   -> MaterialTheme.colorScheme.errorContainer
-                                q == 1   -> Color(0xFFFFF3E0)
-                                else     -> MaterialTheme.colorScheme.secondaryContainer
-                            }
-                        ) {
-                            Column(
-                                modifier            = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
-                                horizontalAlignment = Alignment.CenterHorizontally
-                            ) {
-                                Text(
-                                    "$q",
-                                    style      = MaterialTheme.typography.titleSmall,
-                                    fontWeight = FontWeight.Bold,
-                                    color      = when {
-                                        q == 0 -> MaterialTheme.colorScheme.error
-                                        q == 1 -> Color(0xFFE65100)
-                                        else   -> MaterialTheme.colorScheme.onSecondaryContainer
-                                    }
-                                )
-                                Text(
-                                    "sisa",
-                                    style = MaterialTheme.typography.labelSmall.copy(fontSize = 9.sp),
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-                        }
-                    }
-                }
-
-                // ── Countdown + progress (hanya saat aktif) ───────────────
-                AnimatedVisibility(
-                    visible = isActive,
-                    enter   = expandVertically() + fadeIn(),
-                    exit    = shrinkVertically() + fadeOut()
-                ) {
-                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        Row(
-                            modifier              = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment     = Alignment.CenterVertically
-                        ) {
-                            Text(
-                                "Berakhir dalam",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                            Text(
-                                countdownStr,
-                                style      = MaterialTheme.typography.labelLarge,
-                                fontWeight = FontWeight.Bold,
-                                color      = activeGreen
-                            )
-                        }
-                        LinearProgressIndicator(
-                            progress         = { animProgress },
-                            modifier         = Modifier
-                                .fillMaxWidth()
-                                .height(6.dp)
-                                .clip(RoundedCornerShape(3.dp)),
-                            color            = lightGreen,
-                            trackColor       = lightGreen.copy(alpha = 0.15f),
                         )
                     }
                 }
-
-                // ── Tombol aksi ──────────────────────────────────────────────
-                // Tombol tetap bisa diklik walau iklan belum siap (rewardedReady = false),
-                // supaya user mendapat feedback Toast "Iklan Belum Tersedia" saat ditekan.
-                // Hanya dimatikan saat batas harian sudah tercapai.
-                val btnEnabled = canWatch
-                Button(
-                    onClick  = onWatch,
-                    enabled  = btnEnabled,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(46.dp),
-                    shape  = RoundedCornerShape(12.dp),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = if (isActive) lightGreen else primary,
-                        disabledContainerColor = MaterialTheme.colorScheme.surfaceVariant
-                    ),
-                    elevation = ButtonDefaults.buttonElevation(
-                        defaultElevation  = 0.dp,
-                        pressedElevation  = 0.dp
-                    )
-                ) {
-                    Icon(
-                        Icons.Outlined.PlayCircleOutline, null,
-                        modifier = Modifier.size(17.dp)
-                    )
-                    Spacer(Modifier.width(8.dp))
-                    Text(
-                        text = when {
-                            !canWatch      -> "Batas harian tercapai (${RewardedNoAdsManager.DAILY_LIMIT}x/hari)"
-                            !rewardedReady -> "Tonton Iklan → No Ads 30 Menit"
-                            isActive       -> "Perpanjang +30 Menit"
-                            else           -> "Tonton Iklan → No Ads 30 Menit"
-                        },
-                        style      = MaterialTheme.typography.labelLarge,
-                        fontWeight = FontWeight.SemiBold
-                    )
-                }
-
-                // ── Info kecil ─────────────────────────────────────────────
-                Text(
-                    "Limit ${RewardedNoAdsManager.DAILY_LIMIT}x per hari · Reset pukul 00:00",
-                    style    = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
-                    color    = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
-                    modifier = Modifier.align(Alignment.CenterHorizontally)
-                )
             }
+
+            item { Spacer(Modifier.height(8.dp)) }
         }
     }
 }
@@ -593,7 +308,7 @@ private fun SectionLabel(text: String) {
         style      = MaterialTheme.typography.labelMedium,
         fontWeight = FontWeight.SemiBold,
         color      = MaterialTheme.colorScheme.primary,
-        modifier   = Modifier.padding(start = 4.dp, top = 2.dp, bottom = 4.dp),
+        modifier   = Modifier.padding(start = 4.dp, bottom = 8.dp),
     )
 }
 
@@ -611,6 +326,152 @@ private fun SettingsCard(content: @Composable ColumnScope.() -> Unit) {
     }
 }
 
+// ── License status row (item menu biasa, bukan card besar) ───────────────────
+
+@Composable
+private fun LicenseStatusRow(
+    isFirst     : Boolean,
+    isLast      : Boolean,
+    productName : String,
+    onClick     : () -> Unit,
+) {
+    SettingsActionItem(
+        icon     = Icons.Outlined.VerifiedUser,
+        iconTint = MaterialTheme.colorScheme.primary,
+        title    = "Lisensi",
+        subtitle = if (productName.isNotBlank()) "Aktif · $productName" else "Masukkan kode lisensi",
+        onClick  = onClick,
+        isFirst  = isFirst,
+        isLast   = isLast,
+    )
+}
+
+// ── No Ads rewarded row — flat, netral, konsisten dengan item lain ───────────
+
+@Composable
+private fun NoAdsRewardedRow(
+    isActive        : Boolean,
+    remainingMs     : Long,
+    remainingClaims : Int,
+    canWatch        : Boolean,
+    rewardedReady   : Boolean,
+    onWatch         : () -> Unit,
+    isFirst         : Boolean,
+    isLast          : Boolean,
+) {
+    val countdownStr = formatCountdown(remainingMs)
+
+    Surface(
+        color    = Color.Transparent,
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(
+                    start  = 16.dp,
+                    end    = 16.dp,
+                    top    = if (isFirst) 15.dp else 12.dp,
+                    bottom = if (isLast)  15.dp else 12.dp,
+                ),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            Row(
+                verticalAlignment     = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(14.dp)
+            ) {
+                SettingsIconBox(
+                    icon = if (isActive) Icons.Outlined.Block else Icons.Outlined.OndemandVideo,
+                    tint = MaterialTheme.colorScheme.primary,
+                )
+                Column(
+                    modifier            = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(1.dp)
+                ) {
+                    Text(
+                        text = if (isActive) "No Ads Aktif" else "Tonton Iklan untuk No Ads",
+                        style      = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.Medium,
+                    )
+                    Text(
+                        text = when {
+                            isActive        -> "Iklan dinonaktifkan sementara"
+                            !canWatch        -> "Batas harian tercapai · reset tengah malam"
+                            !rewardedReady   -> "Memuat iklan, harap tunggu…"
+                            else             -> "Tonton 1 iklan · bebas iklan 5 menit"
+                        },
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+
+                if (isActive) {
+                    Text(
+                        countdownStr,
+                        style      = MaterialTheme.typography.labelLarge,
+                        fontWeight = FontWeight.Bold,
+                        color      = MaterialTheme.colorScheme.primary,
+                    )
+                } else {
+                    Surface(
+                        shape = RoundedCornerShape(8.dp),
+                        color = MaterialTheme.colorScheme.surfaceContainerHighest,
+                    ) {
+                        Text(
+                            "$remainingClaims sisa",
+                            style      = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.Medium,
+                            color      = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier   = Modifier.padding(horizontal = 9.dp, vertical = 5.dp)
+                        )
+                    }
+                }
+            }
+
+            // ── Progress bar — hanya saat aktif, mengikuti durasi 5 menit ──
+            if (isActive) {
+                val maxMs    = 5L * 60_000L
+                val progress = (remainingMs.toFloat() / maxMs).coerceIn(0f, 1f)
+                val animProgress by animateFloatAsState(
+                    targetValue   = progress,
+                    animationSpec = tween(600, easing = EaseInOutCubic),
+                    label         = "noAdsProgress"
+                )
+                LinearProgressIndicator(
+                    progress   = { animProgress },
+                    modifier   = Modifier
+                        .fillMaxWidth()
+                        .padding(start = 50.dp)
+                        .height(4.dp)
+                        .clip(RoundedCornerShape(2.dp)),
+                    color      = MaterialTheme.colorScheme.primary,
+                    trackColor = MaterialTheme.colorScheme.surfaceContainerHighest,
+                )
+            }
+
+            // ── Tombol tonton — hanya saat belum aktif ─────────────────────
+            if (!isActive) {
+                FilledTonalButton(
+                    onClick  = onWatch,
+                    enabled  = canWatch,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(start = 50.dp)
+                        .height(38.dp),
+                    shape    = RoundedCornerShape(10.dp),
+                ) {
+                    Icon(Icons.Outlined.PlayCircleOutline, null, modifier = Modifier.size(15.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text(
+                        text = if (canWatch) "Tonton Sekarang" else "Limit Tercapai",
+                        style = MaterialTheme.typography.labelMedium,
+                    )
+                }
+            }
+        }
+    }
+}
+
 // ── Toggle row ────────────────────────────────────────────────────────────────
 
 @Composable
@@ -624,14 +485,8 @@ private fun SettingsToggleItem(
     isFirst   : Boolean,
     isLast    : Boolean,
 ) {
-    val bgColor by animateColorAsState(
-        targetValue   = if (checked) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.22f)
-                        else Color.Transparent,
-        animationSpec = spring(stiffness = Spring.StiffnessMediumLow),
-        label         = "toggleBg",
-    )
     Surface(
-        color    = bgColor,
+        color    = Color.Transparent,
         modifier = Modifier.fillMaxWidth(),
         onClick  = { onChecked(!checked) },
     ) {
@@ -739,13 +594,6 @@ private fun RowDivider() {
 }
 
 // ── Format helpers ────────────────────────────────────────────────────────────
-
-private fun formatDuration(ms: Long): String {
-    val totalMinutes = (ms / 60_000L).coerceAtLeast(0L)
-    val hours        = totalMinutes / 60
-    val minutes      = totalMinutes % 60
-    return if (hours > 0) "${hours}j ${minutes}m" else "${minutes} menit"
-}
 
 private fun formatCountdown(ms: Long): String {
     val totalSec = (ms / 1_000L).coerceAtLeast(0L)

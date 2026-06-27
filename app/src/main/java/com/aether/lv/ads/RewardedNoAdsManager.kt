@@ -63,7 +63,7 @@ data class RewardedNoAdsState(
 object RewardedNoAdsManager {
 
     const val DAILY_LIMIT = 2
-    private const val NO_ADS_DURATION_MS = 30L * 60L * 1000L
+    private const val NO_ADS_DURATION_MS = 5L * 60L * 1000L
 
     private object PrefKeys {
         val NO_ADS_UNTIL = longPreferencesKey("no_ads_until")
@@ -107,7 +107,7 @@ object RewardedNoAdsManager {
      * Dipanggil saat rewarded ad berhasil ditonton sampai selesai.
      * Mengembalikan false jika limit harian sudah habis.
      */
-    fun grant30Minutes(): Boolean {
+    fun grant5Minutes(): Boolean {
         val current = _state.value
         if (!current.canWatchRewarded) {
             Log.d(TAG, "Grant skipped — daily limit reached")

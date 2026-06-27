@@ -5,9 +5,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
-import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
-import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.*
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -21,8 +19,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.hapticfeedback.HapticFeedbackType
-import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -37,13 +33,12 @@ import com.aether.lv.util.FileTypeUtil
 import com.aether.lv.util.FormatUtil
 import kotlinx.coroutines.launch
 
-@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun HomeScreen(
     onOpenFile         : (Uri) -> Unit,
     onSettings         : () -> Unit,
     onAbout            : () -> Unit,
-    onOpenLicense      : () -> Unit = {},
     onShowInterstitial : (() -> Unit) -> Unit = { it() },
     vm                 : HomeViewModel = viewModel()
 ) {
@@ -54,10 +49,9 @@ fun HomeScreen(
     var showClearDialog   by remember { mutableStateOf(false) }
     val snackbarHostState = remember { SnackbarHostState() }
     val scope             = rememberCoroutineScope()
-    val haptic            = LocalHapticFeedback.current
     var fileOpenCount     by remember { mutableStateOf(0) }
 
-    // Ticker untuk countdown no-ads di banner
+    // Ticker untuk countdown no-ads (dipakai untuk gating iklan, tidak ditampilkan di Home)
     var tickMs by remember { mutableLongStateOf(System.currentTimeMillis()) }
     LaunchedEffect(Unit) {
         while (true) {
@@ -99,18 +93,7 @@ fun HomeScreen(
             Column {
                 TopAppBar(
                     title = {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(8.dp))
-                                .combinedClickable(
-                                    onClick = { /* tap biasa — tidak melakukan apa-apa */ },
-                                    onLongClick = {
-                                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                                        onOpenLicense()
-                                    }
-                                )
-                        ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
                             // Logo pill
                             Surface(
                                 shape  = RoundedCornerShape(10.dp),
@@ -131,16 +114,6 @@ fun HomeScreen(
                                 style      = MaterialTheme.typography.titleLarge,
                                 fontWeight = FontWeight.Bold
                             )
-                            // Indikator kecil saat premium aktif (tetap subtle, bukan tombol)
-                            if (licenseState.isNoAds) {
-                                Spacer(Modifier.width(6.dp))
-                                Icon(
-                                    Icons.Rounded.Star,
-                                    contentDescription = "Premium aktif",
-                                    modifier = Modifier.size(14.dp),
-                                    tint     = Color(0xFFFFB300)
-                                )
-                            }
                         }
                     },
                     actions = {
@@ -198,17 +171,6 @@ fun HomeScreen(
                     modifier       = Modifier.fillMaxSize(),
                     contentPadding = PaddingValues(bottom = 100.dp),
                 ) {
-
-                    // ── No Ads banner (premium lisensi atau rewarded aktif) ──
-                    if (isAdsDisabled) {
-                        item {
-                            NoAdsBanner(
-                                isPremium   = licenseState.isNoAds,
-                                remainingMs = noAdsRemainingMs,
-                                modifier    = Modifier.padding(horizontal = 16.dp, vertical = 10.dp)
-                            )
-                        }
-                    }
 
                     // ── Section header ────────────────────────────────────────
                     item {
@@ -319,73 +281,6 @@ fun HomeScreen(
                 TextButton(onClick = { showClearDialog = false }) { Text("Batal") }
             }
         )
-    }
-}
-
-// ── No Ads Banner ─────────────────────────────────────────────────────────────
-
-@Composable
-private fun NoAdsBanner(isPremium: Boolean, remainingMs: Long, modifier: Modifier = Modifier) {
-    val totalSec  = (remainingMs / 1000L).coerceAtLeast(0L)
-    val min       = totalSec / 60
-    val sec       = totalSec % 60
-    val timeLabel = "%02d:%02d".format(min, sec)
-
-    Surface(
-        shape    = RoundedCornerShape(14.dp),
-        color    = Color(0xFF43A047).copy(alpha = 0.12f),
-        modifier = modifier.fillMaxWidth()
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 14.dp, vertical = 10.dp),
-            verticalAlignment     = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(10.dp)
-        ) {
-            Box(
-                modifier = Modifier
-                    .size(32.dp)
-                    .clip(RoundedCornerShape(9.dp))
-                    .background(Color(0xFF43A047).copy(alpha = 0.18f)),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(
-                    if (isPremium) Icons.Rounded.WorkspacePremium else Icons.Outlined.Block, null,
-                    modifier = Modifier.size(16.dp),
-                    tint     = Color(0xFF2E7D32)
-                )
-            }
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    if (isPremium) "Premium Aktif" else "No Ads Aktif",
-                    style      = MaterialTheme.typography.labelMedium,
-                    fontWeight = FontWeight.SemiBold,
-                    color      = Color(0xFF2E7D32)
-                )
-                Text(
-                    if (isPremium) "Iklan dinonaktifkan selamanya"
-                    else "Iklan dinonaktifkan · sisa $timeLabel",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = Color(0xFF43A047)
-                )
-            }
-            // Progress ring visual sederhana — hanya relevan untuk mode rewarded
-            if (!isPremium) {
-                Surface(
-                    shape = RoundedCornerShape(8.dp),
-                    color = Color(0xFF43A047).copy(alpha = 0.18f)
-                ) {
-                    Text(
-                        timeLabel,
-                        style      = MaterialTheme.typography.labelMedium,
-                        fontWeight = FontWeight.Bold,
-                        color      = Color(0xFF2E7D32),
-                        modifier   = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
-                    )
-                }
-            }
-        }
     }
 }
 
