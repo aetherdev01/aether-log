@@ -1,5 +1,6 @@
 package com.aether.lv.ui.screen
 
+import android.widget.Toast
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.background
@@ -19,6 +20,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -51,6 +53,7 @@ fun SettingsScreen(
     val noAdsState   by RewardedNoAdsManager.state.collectAsStateWithLifecycle()
     val rewardedReady by AdsManager.rewardedReady.collectAsStateWithLifecycle()
     val scope        = rememberCoroutineScope()
+    val context      = LocalContext.current
 
     // Ticker tiap detik untuk countdown real-time
     var tickMs by remember { mutableLongStateOf(System.currentTimeMillis()) }
@@ -71,6 +74,22 @@ fun SettingsScreen(
             onShowInterstitial { applyPref() }
         } else {
             applyPref()
+        }
+    }
+
+    // ── Toast "Update Belum Tersedia" saat hasil cek manual tidak ada update ──
+    LaunchedEffect(updateState.noUpdateEvent) {
+        if (updateState.noUpdateEvent != 0L) {
+            Toast.makeText(context, "Update Belum Tersedia", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    // ── Aksi tonton rewarded ad dengan pengecekan ketersediaan ─────────────────
+    fun handleWatchRewarded() {
+        if (!rewardedReady) {
+            Toast.makeText(context, "Iklan Belum Tersedia", Toast.LENGTH_SHORT).show()
+        } else {
+            onShowRewarded()
         }
     }
 
@@ -122,7 +141,7 @@ fun SettingsScreen(
                     remainingClaims = noAdsState.remainingClaims,
                     canWatch       = noAdsState.canWatchRewarded,
                     rewardedReady  = rewardedReady,
-                    onWatch        = onShowRewarded,
+                    onWatch        = { handleWatchRewarded() },
                 )
             }
 
@@ -444,8 +463,11 @@ private fun NoAdsRewardedCard(
                     }
                 }
 
-                // ── Tombol aksi ────────────────────────────────────────────
-                val btnEnabled = canWatch && rewardedReady
+                // ── Tombol aksi ──────────────────────────────────────────────
+                // Tombol tetap bisa diklik walau iklan belum siap (rewardedReady = false),
+                // supaya user mendapat feedback Toast "Iklan Belum Tersedia" saat ditekan.
+                // Hanya dimatikan saat batas harian sudah tercapai.
+                val btnEnabled = canWatch
                 Button(
                     onClick  = onWatch,
                     enabled  = btnEnabled,
@@ -470,7 +492,7 @@ private fun NoAdsRewardedCard(
                     Text(
                         text = when {
                             !canWatch      -> "Batas harian tercapai (${RewardedNoAdsManager.DAILY_LIMIT}x/hari)"
-                            !rewardedReady -> "Memuat iklan…"
+                            !rewardedReady -> "Tonton Iklan → No Ads 30 Menit"
                             isActive       -> "Perpanjang +30 Menit"
                             else           -> "Tonton Iklan → No Ads 30 Menit"
                         },

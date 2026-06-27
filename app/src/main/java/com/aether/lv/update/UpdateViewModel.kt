@@ -21,7 +21,8 @@ data class UpdateUiState(
     val downloadState  : DownloadState = DownloadState.IDLE,
     val downloadPct    : Int           = 0,
     val downloadedFile : File?         = null,
-    val errorMsg       : String?       = null
+    val errorMsg       : String?       = null,
+    val noUpdateEvent  : Long          = 0L   // ← berubah setiap kali "tidak ada update" hasil cek manual, dipakai untuk trigger Toast sekali
 )
 
 class UpdateViewModel(application: Application) : AndroidViewModel(application) {
@@ -44,11 +45,15 @@ class UpdateViewModel(application: Application) : AndroidViewModel(application) 
             hasCheckedThisSession = true
             _state.update { it.copy(isChecking = true) }
             val info = UpdateChecker.check(ctx, BuildConfig.VERSION_NAME)
+            val hasUpdate = info?.isNewVersion == true
             _state.update { s ->
                 s.copy(
-                    isChecking = false,
-                    updateInfo = info,
-                    showDialog = info?.isNewVersion == true
+                    isChecking   = false,
+                    updateInfo   = info,
+                    showDialog   = hasUpdate,
+                    // Hanya munculkan toast "belum tersedia" untuk pengecekan manual (force),
+                    // bukan auto-check saat app dibuka, supaya tidak mengganggu user.
+                    noUpdateEvent = if (force && !hasUpdate) System.currentTimeMillis() else s.noUpdateEvent
                 )
             }
         }

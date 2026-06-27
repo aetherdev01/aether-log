@@ -378,7 +378,7 @@ private fun RecentFileRow(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 14.dp, vertical = 11.dp),
+                .padding(horizontal = 14.dp, vertical = 12.dp),
             verticalAlignment     = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(12.dp)
         ) {
@@ -401,8 +401,9 @@ private fun RecentFileRow(
             // ── Teks tengah ───────────────────────────────────────────────
             Column(
                 modifier            = Modifier.weight(1f),
-                verticalArrangement = Arrangement.spacedBy(3.dp)
+                verticalArrangement = Arrangement.spacedBy(4.dp)
             ) {
+                // Baris 1 — nama file
                 Text(
                     text       = file.displayName,
                     style      = MaterialTheme.typography.bodyMedium,
@@ -414,11 +415,12 @@ private fun RecentFileRow(
                     else
                         MaterialTheme.colorScheme.onSurface
                 )
+
+                // Baris 2 — info utama: badge tipe file + waktu dibuka
                 Row(
                     verticalAlignment     = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
-                    // Badge tipe file
                     Box(
                         modifier = Modifier
                             .clip(RoundedCornerShape(4.dp))
@@ -432,29 +434,36 @@ private fun RecentFileRow(
                             fontWeight = FontWeight.SemiBold
                         )
                     }
-                    MetaDot()
                     Text(
-                        FormatUtil.formatSize(file.sizeBytes),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    if (file.lineCount > 0) {
-                        MetaDot()
-                        Text(
-                            "${file.lineCount} baris",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                    MetaDot()
-                    Text(
-                        FormatUtil.formatRelativeTime(file.lastOpenedAt),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = if (isTemporary)
+                        text     = FormatUtil.formatRelativeTime(file.lastOpenedAt),
+                        style    = MaterialTheme.typography.labelSmall,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        color    = if (isTemporary)
                             MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.38f)
                         else
                             MaterialTheme.colorScheme.primary.copy(alpha = 0.75f)
                     )
+                }
+
+                // Baris 3 — info sekunder: ukuran & jumlah baris (lebih redup)
+                Row(
+                    verticalAlignment     = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    Text(
+                        text  = FormatUtil.formatSize(file.sizeBytes),
+                        style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                    )
+                    if (file.lineCount > 0) {
+                        MetaDot()
+                        Text(
+                            text  = "${file.lineCount} baris",
+                            style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
+                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                        )
+                    }
                 }
             }
 

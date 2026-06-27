@@ -4,6 +4,7 @@ import android.content.Intent
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -15,6 +16,7 @@ import androidx.compose.runtime.setValue
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import com.aether.lv.ads.AdBlockManager
 import com.aether.lv.ads.AdsManager
+import com.aether.lv.ads.RewardedNoAdsManager
 import com.aether.lv.data.preferences.ThemePreferences
 import com.aether.lv.permission.PermissionManager
 import com.aether.lv.permission.PermissionRationaleDialog
@@ -61,7 +63,8 @@ class MainActivity : ComponentActivity() {
                             onComplete = afterAction,
                             onFailed   = { afterAction() }
                         )
-                    }
+                    },
+                    onShowRewarded      = { showRewardedAdWithToast() }
                 )
 
                 if (showPermissionDialog) {
@@ -148,6 +151,38 @@ class MainActivity : ComponentActivity() {
             onRewarded = onRewarded,
             onComplete = onComplete,
             onFailed   = onFailed
+        )
+    }
+
+    /**
+     * Tonton rewarded ad dari Settings (tombol "No Ads 30 Menit").
+     * Menampilkan Toast untuk setiap kemungkinan hasil:
+     * - Iklan belum tersedia / belum siap dimuat → "Iklan Belum Tersedia"
+     * - Iklan siap & berhasil ditonton sampai selesai → reward diberikan + Toast sukses
+     * - Iklan gagal ditampilkan (network error, dll) → Toast gagal
+     */
+    private fun showRewardedAdWithToast() {
+        // Belum siap sama sekali (SDK belum init / belum ada ad yang dimuat)
+        if (!AdsManager.rewardedReady.value) {
+            Toast.makeText(this, "Iklan Belum Tersedia", Toast.LENGTH_SHORT).show()
+            // Coba muat lagi untuk percobaan berikutnya
+            AdsManager.loadRewarded(this)
+            return
+        }
+
+        showRewardedAd(
+            onRewarded = {
+                val granted = RewardedNoAdsManager.grant30Minutes()
+                if (granted) {
+                    Toast.makeText(this, "Berhasil! Bebas iklan 30 menit aktif", Toast.LENGTH_SHORT).show()
+                } else {
+                    Toast.makeText(this, "Batas harian tercapai", Toast.LENGTH_SHORT).show()
+                }
+            },
+            onFailed = {
+                Toast.makeText(this, "Iklan Belum Tersedia", Toast.LENGTH_SHORT).show()
+                AdsManager.loadRewarded(this)
+            }
         )
     }
 
