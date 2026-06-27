@@ -45,6 +45,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import kotlinx.coroutines.launch
@@ -164,6 +166,18 @@ fun EditorScreen(
             totalLines = state.totalLines,
             onConfirm  = vm::goToLine,
             onDismiss  = vm::hideGoToLine,
+        )
+    }
+
+    // ── Base64 dialog ───────────────────────────────────────────────────────
+    if (state.base64DialogVisible) {
+        Base64Dialog(
+            state     = state,
+            onDismiss = vm::hideBase64Dialog,
+            onModeChange   = vm::setBase64Mode,
+            onInputChange  = vm::setBase64Input,
+            onProcess      = vm::processBase64,
+            onApply        = vm::applyBase64Output,
         )
     }
 }
@@ -316,6 +330,18 @@ private fun EditorTopBar(
                             text = { Text("Simpan Sebagai…") },
                             leadingIcon = { Icon(Icons.Outlined.SaveAs, null) },
                             onClick = { showMenu = false; onSaveAs() }
+                        )
+                        HorizontalDivider()
+                        // Base64
+                        DropdownMenuItem(
+                            text = { Text("Base64 Encode") },
+                            leadingIcon = { Icon(Icons.Outlined.Lock, null) },
+                            onClick = { showMenu = false; vm.showBase64Dialog(Base64Mode.ENCODE) }
+                        )
+                        DropdownMenuItem(
+                            text = { Text("Base64 Decode") },
+                            leadingIcon = { Icon(Icons.Outlined.LockOpen, null) },
+                            onClick = { showMenu = false; vm.showBase64Dialog(Base64Mode.DECODE) }
                         )
                     }
                 }
@@ -602,6 +628,179 @@ private fun GoToLineDialog(
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Status bar
+// ─────────────────────────────────────────────────────────────────────────────
+
+@Composable
+private fun Base64Dialog(
+    state         : EditorUiState,
+    onDismiss     : () -> Unit,
+    onModeChange  : (Base64Mode) -> Unit,
+    onInputChange : (String) -> Unit,
+    onProcess     : (Boolean) -> Unit,
+    onApply       : () -> Unit,
+) {
+    var useChunks by remember { mutableStateOf(false) }
+    val scrollState = rememberScrollState()
+
+    Dialog(onDismissRequest = onDismiss) {
+        Surface(
+            shape         = RoundedCornerShape(16.dp),
+            tonalElevation = 6.dp,
+            modifier      = Modifier.fillMaxWidth(),
+        ) {
+            Column(
+                modifier = Modifier
+                    .padding(20.dp)
+                    .verticalScroll(scrollState),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                // ── Judul ───────────────────────────────────────────────────
+                Text("Base64 Encode / Decode", style = MaterialTheme.typography.titleMedium)
+
+                // ── Toggle Mode ─────────────────────────────────────────────
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    FilterChip(
+                        selected = state.base64Mode == Base64Mode.ENCODE,
+                        onClick  = { onModeChange(Base64Mode.ENCODE) },
+                        label    = { Text("Encode") },
+                        leadingIcon = { Icon(Icons.Outlined.Lock, null, Modifier.size(16.dp)) },
+                        modifier = Modifier.weight(1f),
+                    )
+                    FilterChip(
+                        selected = state.base64Mode == Base64Mode.DECODE,
+                        onClick  = { onModeChange(Base64Mode.DECODE) },
+                        label    = { Text("Decode") },
+                        leadingIcon = { Icon(Icons.Outlined.LockOpen, null, Modifier.size(16.dp)) },
+                        modifier = Modifier.weight(1f),
+                    )
+                }
+
+                // ── Chunks toggle ────────────────────────────────────────────
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Checkbox(
+                        checked         = useChunks,
+                        onCheckedChange = { useChunks = it },
+                    )
+                    Column(Modifier.weight(1f)) {
+                        Text("Mode 512-byte chunk", style = MaterialTheme.typography.bodySmall)
+                        Text(
+                            if (state.base64Mode == Base64Mode.ENCODE)
+                                "Encode per blok 512 byte, dipisah ---"
+                            else
+                                "Decode tiap blok yang dipisah ---",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+
+                // ── Input ───────────────────────────────────────────────────
+                OutlinedTextField(
+                    value         = state.base64Input,
+                    onValueChange = onInputChange,
+                    label         = {
+                        Text(if (state.base64Mode == Base64Mode.ENCODE) "Teks asli" else "String Base64")
+                    },
+                    placeholder   = {
+                        Text(
+                            if (state.base64Mode == Base64Mode.ENCODE) "Ketik atau paste teks…"
+                            else "Paste Base64 di sini…",
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                    },
+                    modifier      = Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = 80.dp, max = 150.dp),
+                    maxLines      = 8,
+                    textStyle     = LocalTextStyle.current.copy(fontFamily = FontFamily.Monospace, fontSize = 12.sp),
+                )
+
+                // ── Proses button ────────────────────────────────────────────
+                Button(
+                    onClick  = { onProcess(useChunks) },
+                    enabled  = state.base64Input.isNotBlank(),
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Icon(
+                        if (state.base64Mode == Base64Mode.ENCODE) Icons.Outlined.Lock else Icons.Outlined.LockOpen,
+                        null,
+                        Modifier.size(18.dp),
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    Text(if (state.base64Mode == Base64Mode.ENCODE) "Encode" else "Decode")
+                }
+
+                // ── Error ────────────────────────────────────────────────────
+                if (state.base64Error != null) {
+                    Surface(
+                        color  = MaterialTheme.colorScheme.errorContainer,
+                        shape  = RoundedCornerShape(8.dp),
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Text(
+                            text     = state.base64Error,
+                            color    = MaterialTheme.colorScheme.onErrorContainer,
+                            style    = MaterialTheme.typography.bodySmall,
+                            modifier = Modifier.padding(10.dp),
+                        )
+                    }
+                }
+
+                // ── Output ───────────────────────────────────────────────────
+                if (state.base64Output.isNotEmpty()) {
+                    OutlinedTextField(
+                        value         = state.base64Output,
+                        onValueChange = {},
+                        readOnly      = true,
+                        label         = {
+                            Text(if (state.base64Mode == Base64Mode.ENCODE) "Hasil Base64" else "Teks terdecode")
+                        },
+                        modifier      = Modifier
+                            .fillMaxWidth()
+                            .heightIn(min = 80.dp, max = 150.dp),
+                        maxLines      = 8,
+                        textStyle     = LocalTextStyle.current.copy(fontFamily = FontFamily.Monospace, fontSize = 12.sp),
+                        trailingIcon  = {
+                            // Info karakter
+                            Text(
+                                "${state.base64Output.length} char",
+                                style    = MaterialTheme.typography.labelSmall,
+                                color    = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(end = 8.dp),
+                            )
+                        },
+                    )
+                }
+
+                // ── Action buttons ───────────────────────────────────────────
+                Row(
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.End,
+                    verticalAlignment     = Alignment.CenterVertically,
+                ) {
+                    TextButton(onClick = onDismiss) { Text("Tutup") }
+                    if (state.base64Output.isNotEmpty()) {
+                        Spacer(Modifier.width(8.dp))
+                        Button(onClick = onApply) {
+                            Icon(Icons.Outlined.ContentPaste, null, Modifier.size(16.dp))
+                            Spacer(Modifier.width(6.dp))
+                            Text("Tempel ke Editor")
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Status bar (original)
 // ─────────────────────────────────────────────────────────────────────────────
 
 @Composable
