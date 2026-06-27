@@ -103,7 +103,7 @@ class MainActivity : ComponentActivity() {
      */
     @Suppress("OVERRIDE_DEPRECATION")
     override fun onBackPressed() {
-        if (AdsManager.isAdShowing) {
+        if (AdsManager.isAdShowing.value) {
             // Iklan sedang tampil — abaikan back gesture
             return
         }

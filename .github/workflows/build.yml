@@ -65,24 +65,47 @@ jobs:
           path: app/build/outputs/apk/release/loglog-v*-release.apk
           if-no-files-found: error
 
-      # ── 9. Notif Telegram ───────────────────────────────────────────────────
-      - name: Telegram Notification
-        if: always()
+      # ── 9. Kirim APK ke Telegram ─────────────────────────────────────────────
+      - name: Send APK to Telegram
+        if: success()
         run: |
-          STATUS="${{ job.status }}"
+          SHA="${{ github.sha }}"
+          SHA_SHORT="${SHA:0:7}"
+          RUN_URL="https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          APK_PATH=$(find app/build/outputs/apk/release/ -name "*.apk" | head -n 1)
+          APK_NAME=$(basename "$APK_PATH")
+
+          # Ambil versionName dari build.gradle.kts atau build.gradle
+          VERSION=$(grep -m1 'versionName' app/build.gradle.kts 2>/dev/null \
+                    || grep -m1 'versionName' app/build.gradle 2>/dev/null \
+                    | tr -d ' "' | cut -d'=' -f2)
+          [ -z "$VERSION" ] && VERSION="unknown"
+
+          # Ukuran file dalam MB
+          SIZE_BYTES=$(stat -c%s "$APK_PATH")
+          SIZE_MB=$(awk "BEGIN {printf \"%.2f\", ${SIZE_BYTES}/1048576}")
+
+          CAPTION=$(printf \
+            '✅ Build <b>LogLog</b> berhasil\n\n📦 <b>File:</b> <code>%s</code>\n🏷 <b>Versi:</b> <code>%s</code>\n💾 <b>Ukuran:</b> <code>%s MB</code>\n🔖 <b>Commit:</b> <code>%s</code> — <a href="%s">lihat detail</a>' \
+            "$APK_NAME" "$VERSION" "$SIZE_MB" "$SHA_SHORT" "$RUN_URL")
+
+          curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendDocument" \
+            -F chat_id="${{ secrets.TELEGRAM_CHAT_ID }}" \
+            -F parse_mode="HTML" \
+            -F caption="${CAPTION}" \
+            -F document=@"${APK_PATH}" || true
+
+      # ── 10. Notif Telegram (gagal saja) ──────────────────────────────────────
+      - name: Telegram Notification (Failure)
+        if: failure()
+        run: |
           SHA="${{ github.sha }}"
           SHA_SHORT="${SHA:0:7}"
           RUN_URL="https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
 
-          if [ "$STATUS" = "success" ]; then
-            EMOJI="✅"
-            MSG="Build <b>LogLog</b> berhasil"
-          else
-            EMOJI="❌"
-            MSG="Build <b>LogLog</b> gagal"
-          fi
-
-          TEXT="${EMOJI} ${MSG}"$'\n'"<code>${SHA_SHORT}</code> — <a href=\"${RUN_URL}\">lihat detail</a>"
+          TEXT=$(printf \
+            '❌ Build <b>LogLog</b> gagal\n\n🔖 <b>Commit:</b> <code>%s</code> — <a href="%s">lihat detail</a>' \
+            "$SHA_SHORT" "$RUN_URL")
 
           curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
             -d chat_id="${{ secrets.TELEGRAM_CHAT_ID }}" \
