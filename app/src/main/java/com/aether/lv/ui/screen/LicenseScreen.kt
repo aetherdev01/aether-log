@@ -132,12 +132,12 @@ private fun ActivateSection(
         // ── Header sederhana ──────────────────────────────────────────────
         Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Text(
-                "Aktifkan No Ads",
+                "Aktifkan Lisensi Plus",
                 style      = MaterialTheme.typography.headlineSmall,
                 fontWeight = FontWeight.Bold,
             )
             Text(
-                "Masukkan kode lisensi untuk menghilangkan iklan secara permanen.",
+                "Masukkan kode lisensi untuk menghilangkan iklan.",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -150,7 +150,7 @@ private fun ActivateSection(
                 onValueChange = onKeyInput,
                 modifier      = Modifier.fillMaxWidth(),
                 label         = { Text("Kode Lisensi") },
-                placeholder   = { Text("Contoh: AETHER-XXXX-XXXX") },
+                placeholder   = { Text("") },
                 singleLine    = true,
                 visualTransformation = if (keyVisible) VisualTransformation.None
                                        else PasswordVisualTransformation(),

@@ -136,7 +136,7 @@ fun SettingsScreen(
         ) {
 
             // ── No Ads & Lisensi ──────────────────────────────────────────────
-            item { SectionLabel("No Ads & Lisensi") }
+            item { SectionLabel("Ads & Lisensi") }
             item {
                 SettingsCard {
                     if (isPremium) {
@@ -396,7 +396,7 @@ private fun NoAdsRewardedRow(
                     Text(
                         text = when {
                             isActive        -> "Iklan dinonaktifkan sementara"
-                            !canWatch        -> "Batas harian tercapai · reset tengah malam"
+                            !canWatch        -> "Batas harian tercapai · Reset jam 00:00"
                             !rewardedReady   -> "Memuat iklan, harap tunggu…"
                             else             -> "Tonton 1 iklan · bebas iklan 5 menit"
                         },
