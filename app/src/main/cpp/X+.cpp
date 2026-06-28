@@ -202,74 +202,53 @@ Java_com_aether_lv_util_NativeSearch_nativeCountMatches(
 // § 2  LICENSE KEY FORMAT VALIDATOR
 // ═════════════════════════════════════════════════════════════════════════════
 //
-// Format: XXXX-XXXX-XXXX-XXXX
-//   • Setiap karakter: Base36 (0-9, A-Z)
-//   • 4 grup × 4 karakter, dipisah '-'
-//   • Total panjang: 19 karakter
+// Validasi FORMAT saja — panjang, karakter legal (alphanumeric + tanda pisah),
+// dan minimum entropy (tidak semua karakter sama).
 //
-// Checksum (obfuscated):
-//   Byte terakhir (karakter ke-15 dari payload) harus sama dengan
-//   XOR semua 15 karakter payload sebelumnya, di-AND dengan mask
-//   yang disimpan XOR-encoded di native (tidak terlihat di bytecode).
+// Checksum/authenticity sepenuhnya urusan server (/activate endpoint).
+// Native layer hanya memastikan string yang masuk masuk akal sebelum
+// membuang network request — bukan memvalidasi kode itu sendiri.
 //
-// ─── XOR-encoded checksum mask ────────────────────────────────────────────
-// Mask asli: 0x1F  (Base36: karakter valid = nilai 0..35, 0x1F = 31)
-// XOR key  : 0xA3
-// Encoded  : 0x1F ^ 0xA3 = 0xBC
-static constexpr uint8_t ENC_MASK    = 0xBC;
-static constexpr uint8_t MASK_XORKEY = 0xA3;
+// Format yang didukung (fleksibel):
+//   • Minimal 8 karakter setelah strip tanda '-'
+//   • Karakter legal: 0-9, A-Z, a-z, '-'
+//   • Tidak boleh semua karakter identik (entropy check)
+
+// Cek apakah karakter legal untuk kode lisensi
+static bool isLicenseChar(char c) {
+    return std::isalnum((unsigned char)c) || c == '-';
+}
 
 // Minimum entropy: payload tidak boleh semua karakter sama
-static bool hasEntropy(const std::string& payload) {
-    char first = payload[0];
-    for (char c : payload)
+static bool hasEntropy(const std::string& s) {
+    if (s.empty()) return false;
+    char first = s[0];
+    for (char c : s)
         if (c != first) return true;
     return false;
 }
 
-// Base36 decode nilai karakter (0-35), return -1 jika invalid
-static int b36val(char c) {
-    c = static_cast<char>(std::toupper((unsigned char)c));
-    if (c >= '0' && c <= '9') return c - '0';
-    if (c >= 'A' && c <= 'Z') return c - 'A' + 10;
-    return -1;
-}
-
 /**
- * Validasi format & checksum kode lisensi.
- * Return: true jika format valid dan checksum cocok.
+ * Validasi format kode lisensi (format saja, bukan checksum).
+ * Return: true jika karakter legal, panjang cukup, dan ada variasi karakter.
  */
 static bool validateLicenseFormat(const std::string& key) {
-    // Panjang harus 19: XXXX-XXXX-XXXX-XXXX
-    if (key.size() != 19) return false;
+    if (key.size() < 8) return false;
 
-    // Posisi tanda '-'
-    if (key[4] != '-' || key[9] != '-' || key[14] != '-') return false;
+    // Semua karakter harus legal
+    for (char c : key)
+        if (!isLicenseChar(c)) return false;
 
-    // Ekstrak payload (16 karakter, tanpa '-')
+    // Strip '-' untuk cek panjang payload dan entropy
     std::string payload;
-    payload.reserve(16);
-    for (size_t i = 0; i < key.size(); ++i) {
-        if (key[i] == '-') continue;
-        int v = b36val(key[i]);
-        if (v < 0) return false;          // karakter bukan Base36
-        payload += static_cast<char>(v);  // simpan nilai numeriknya
-    }
-    if (payload.size() != 16) return false;
+    payload.reserve(key.size());
+    for (char c : key)
+        if (c != '-') payload += static_cast<char>(std::toupper((unsigned char)c));
 
-    // Entropy check
+    if (payload.size() < 8) return false;
     if (!hasEntropy(payload)) return false;
 
-    // Checksum: XOR 15 byte pertama, bandingkan dengan byte ke-16
-    // Decode mask dari native storage
-    uint8_t mask = ENC_MASK ^ MASK_XORKEY;   // = 0x1F
-    uint8_t xorSum = 0;
-    for (size_t i = 0; i < 15; ++i)
-        xorSum ^= static_cast<uint8_t>(payload[i]);
-    xorSum &= mask;
-
-    uint8_t checkByte = static_cast<uint8_t>(payload[15]) & mask;
-    return xorSum == checkByte;
+    return true;
 }
 
 // ─── JNI: validateLicenseFormat → boolean ─────────────────────────────────

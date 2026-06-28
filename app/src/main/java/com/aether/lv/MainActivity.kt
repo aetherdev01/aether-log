@@ -183,7 +183,7 @@ class MainActivity : ComponentActivity() {
      */
     private fun showRewardedAdWithToast() {
         if (isPremiumNoAds()) {
-            Toast.makeText(this, "Premium aktif", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, "Premium aktif — iklan sudah dinonaktifkan", Toast.LENGTH_SHORT).show()
             return
         }
 
