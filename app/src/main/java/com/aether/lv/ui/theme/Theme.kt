@@ -10,7 +10,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.core.view.WindowCompat
 
-// ── Static fallback color schemes (Monet Accent1 warm amber) ─────────────────
+// ── Static fallback (Monet warm brown/cream – cocok screenshot) ───────────────
 
 private val LightColorScheme = lightColorScheme(
     primary               = md_theme_light_primary,
@@ -73,7 +73,7 @@ fun LogLogTheme(
     content      : @Composable () -> Unit,
 ) {
     val colorScheme = when {
-        // Android 12+ → gunakan warna wallpaper (Monet dynamic)
+        // Android 12+ → warna dari wallpaper (Monet dynamic)
         dynamicColor && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S -> {
             val context = LocalContext.current
             if (darkTheme) dynamicDarkColorScheme(context)
