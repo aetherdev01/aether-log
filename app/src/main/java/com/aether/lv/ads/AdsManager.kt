@@ -55,30 +55,25 @@ object AdsManager {
         appContext = context.applicationContext
 
         if (_isInitialized.value) {
-            Log.d(TAG, "Already initialized — skip")
             return
         }
 
-        Log.d(TAG, "Initializing Unity Ads | gameId=$GAME_ID testMode=$testMode")
-
+      
         UnityAds.initialize(
             context.applicationContext,
             GAME_ID,
             testMode,
             object : IUnityAdsInitializationListener {
                 override fun onInitializationComplete() {
-                    Log.d(TAG, "Unity Ads initialized OK")
                     _isInitialized.value = true
 
                     // Eksekusi pending loads
                     if (pendingInterstitialLoad) {
                         pendingInterstitialLoad = false
-                        Log.d(TAG, "Executing pending interstitial load")
                         loadInterstitialInternal()
                     }
                     if (pendingRewardedLoad) {
                         pendingRewardedLoad = false
-                        Log.d(TAG, "Executing pending rewarded load")
                         loadRewardedInternal()
                     }
                 }
@@ -87,7 +82,6 @@ object AdsManager {
                     error: UnityAds.UnityAdsInitializationError?,
                     message: String?
                 ) {
-                    Log.e(TAG, "Init failed: $error — $message")
                     _isInitialized.value = false
                     pendingInterstitialLoad = false
                     pendingRewardedLoad = false
@@ -105,7 +99,6 @@ object AdsManager {
     fun loadInterstitial(context: Context) {
         if (appContext == null) appContext = context.applicationContext
         if (!_isInitialized.value) {
-            Log.d(TAG, "Interstitial: SDK belum init — set pending")
             pendingInterstitialLoad = true
             return
         }
@@ -116,7 +109,6 @@ object AdsManager {
 
     private fun loadInterstitialInternal() {
         if (_interstitialReady.value) {
-            Log.d(TAG, "Interstitial already ready — skip")
             return
         }
         Log.d(TAG, "Loading interstitial: $INTERSTITIAL_UNIT_ID")

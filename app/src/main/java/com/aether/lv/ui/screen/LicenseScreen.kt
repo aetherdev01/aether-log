@@ -423,7 +423,7 @@ private fun CountdownSep() {
         style      = MaterialTheme.typography.titleLarge,
         fontWeight = FontWeight.Bold,
         color      = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
-        modifier   = Modifier.padding(horizontal = 10.dp, bottom = 14.dp),
+        modifier   = Modifier.padding(start = 10.dp, top = 0.dp, end = 10.dp, bottom = 14.dp),
     )
 }
 
