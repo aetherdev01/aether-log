@@ -2,55 +2,60 @@ package com.aether.lv.ui.theme
 
 import androidx.compose.ui.graphics.Color
 
+// ── Monet Accent1 Palette (Warm Amber) ────────────────────────────────────────
+// Accent1-100  → #FFE0B2  (amber-100)
+// Accent1-200  → #FFCC80  (amber-200)
+// Accent1-300  → #FFB74D  (amber-300)
+
 // ── Light ────────────────────────────────────────────────────────────────────
-val md_theme_light_primary             = Color(0xFF4A5FBF)
+val md_theme_light_primary             = Color(0xFFA66A00)   // Accent1 deep amber
 val md_theme_light_onPrimary           = Color(0xFFFFFFFF)
-val md_theme_light_primaryContainer    = Color(0xFFDDE1FF)
-val md_theme_light_onPrimaryContainer  = Color(0xFF001257)
-val md_theme_light_secondary           = Color(0xFF5B5D72)
+val md_theme_light_primaryContainer    = Color(0xFFFFE0B2)   // Accent1-100
+val md_theme_light_onPrimaryContainer  = Color(0xFF341C00)
+val md_theme_light_secondary           = Color(0xFF775A2A)   // warm brown
 val md_theme_light_onSecondary         = Color(0xFFFFFFFF)
-val md_theme_light_secondaryContainer  = Color(0xFFE0E0F9)
-val md_theme_light_onSecondaryContainer= Color(0xFF181A2C)
-val md_theme_light_tertiary            = Color(0xFF76546E)
+val md_theme_light_secondaryContainer  = Color(0xFFFFCC80)   // Accent1-200
+val md_theme_light_onSecondaryContainer= Color(0xFF2B1700)
+val md_theme_light_tertiary            = Color(0xFF5C6200)   // warm olive accent
 val md_theme_light_onTertiary          = Color(0xFFFFFFFF)
-val md_theme_light_tertiaryContainer   = Color(0xFFFFD7F5)
-val md_theme_light_onTertiaryContainer = Color(0xFF2D1228)
+val md_theme_light_tertiaryContainer   = Color(0xFFE3EA00)
+val md_theme_light_onTertiaryContainer = Color(0xFF1A1C00)
 val md_theme_light_error               = Color(0xFFBA1A1A)
 val md_theme_light_onError             = Color(0xFFFFFFFF)
 val md_theme_light_errorContainer      = Color(0xFFFFDAD6)
 val md_theme_light_onErrorContainer    = Color(0xFF410002)
-val md_theme_light_background          = Color(0xFFFEF9FF)
-val md_theme_light_onBackground        = Color(0xFF1B1B1F)
-val md_theme_light_surface             = Color(0xFFFEF9FF)
-val md_theme_light_onSurface           = Color(0xFF1B1B1F)
-val md_theme_light_surfaceVariant      = Color(0xFFE3E1EC)
-val md_theme_light_onSurfaceVariant    = Color(0xFF46464F)
-val md_theme_light_outline             = Color(0xFF767680)
+val md_theme_light_background          = Color(0xFFFDF8F3)   // warm off-white
+val md_theme_light_onBackground        = Color(0xFF1F1B16)
+val md_theme_light_surface             = Color(0xFFFDF8F3)   // warm off-white
+val md_theme_light_onSurface           = Color(0xFF1F1B16)
+val md_theme_light_surfaceVariant      = Color(0xFFF0E5D4)   // warm tinted surface
+val md_theme_light_onSurfaceVariant    = Color(0xFF4F4539)
+val md_theme_light_outline             = Color(0xFF817567)
 
 // ── Dark ─────────────────────────────────────────────────────────────────────
-val md_theme_dark_primary              = Color(0xFFB8C4FF)
-val md_theme_dark_onPrimary            = Color(0xFF0F2188)
-val md_theme_dark_primaryContainer     = Color(0xFF3044A5)
-val md_theme_dark_onPrimaryContainer   = Color(0xFFDDE1FF)
-val md_theme_dark_secondary            = Color(0xFFC3C4DC)
-val md_theme_dark_onSecondary          = Color(0xFF2D2F42)
-val md_theme_dark_secondaryContainer   = Color(0xFF434559)
-val md_theme_dark_onSecondaryContainer = Color(0xFFE0E0F9)
-val md_theme_dark_tertiary             = Color(0xFFE5BAD8)
-val md_theme_dark_onTertiary           = Color(0xFF44273E)
-val md_theme_dark_tertiaryContainer    = Color(0xFF5C3D56)
-val md_theme_dark_onTertiaryContainer  = Color(0xFFFFD7F5)
+val md_theme_dark_primary              = Color(0xFFFFB74D)   // Accent1-300
+val md_theme_dark_onPrimary            = Color(0xFF452B00)
+val md_theme_dark_primaryContainer     = Color(0xFF7D4F00)
+val md_theme_dark_onPrimaryContainer   = Color(0xFFFFDDB3)
+val md_theme_dark_secondary            = Color(0xFFFFCC80)   // Accent1-200
+val md_theme_dark_onSecondary          = Color(0xFF432C00)
+val md_theme_dark_secondaryContainer   = Color(0xFF5D4000)
+val md_theme_dark_onSecondaryContainer = Color(0xFFFFDDB3)
+val md_theme_dark_tertiary             = Color(0xFFC7CF00)
+val md_theme_dark_onTertiary           = Color(0xFF2E3200)
+val md_theme_dark_tertiaryContainer    = Color(0xFF444900)
+val md_theme_dark_onTertiaryContainer  = Color(0xFFE3EA6A)
 val md_theme_dark_error                = Color(0xFFFFB4AB)
 val md_theme_dark_onError              = Color(0xFF690005)
 val md_theme_dark_errorContainer       = Color(0xFF93000A)
 val md_theme_dark_onErrorContainer     = Color(0xFFFFDAD6)
-val md_theme_dark_background           = Color(0xFF1B1B1F)
-val md_theme_dark_onBackground         = Color(0xFFE5E1E6)
-val md_theme_dark_surface              = Color(0xFF1B1B1F)
-val md_theme_dark_onSurface            = Color(0xFFE5E1E6)
-val md_theme_dark_surfaceVariant       = Color(0xFF46464F)
-val md_theme_dark_onSurfaceVariant     = Color(0xFFC7C5D0)
-val md_theme_dark_outline              = Color(0xFF90909A)
+val md_theme_dark_background           = Color(0xFF1F1B16)   // warm dark
+val md_theme_dark_onBackground         = Color(0xFFEAE1D9)
+val md_theme_dark_surface              = Color(0xFF1F1B16)   // warm dark
+val md_theme_dark_onSurface            = Color(0xFFEAE1D9)
+val md_theme_dark_surfaceVariant       = Color(0xFF4F4539)
+val md_theme_dark_onSurfaceVariant     = Color(0xFFD3C4B4)
+val md_theme_dark_outline              = Color(0xFF9C8F80)
 
 // ── Log level tag colors ──────────────────────────────────────────────────────
 val LogColorVerbose  = Color(0xFF9E9E9E)

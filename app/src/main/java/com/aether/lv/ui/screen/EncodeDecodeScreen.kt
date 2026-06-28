@@ -30,7 +30,7 @@ import kotlinx.coroutines.launch
 
 private enum class EncodeMode { ENCODE, DECODE }
 
-private enum class CharsetOption(val label: String, val charset: Charsets = Charsets.UTF_8) {
+private enum class CharsetOption(val label: String) {
     UTF8("UTF-8"),
     ISO_8859("ISO-8859-1"),
     ASCII("ASCII");
