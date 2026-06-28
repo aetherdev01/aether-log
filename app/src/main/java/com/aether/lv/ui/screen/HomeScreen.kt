@@ -17,8 +17,10 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -28,6 +30,9 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.aether.lv.ads.AdsManager
 import com.aether.lv.ads.RewardedNoAdsManager
 import com.aether.lv.data.model.RecentFile
+import com.aether.lv.data.preferences.PillNavPreferences
+import com.aether.lv.ui.component.FloatingPillNav
+import com.aether.lv.ui.component.PillNavItem
 import com.aether.lv.update.UpdateDialog
 import com.aether.lv.util.FileTypeUtil
 import com.aether.lv.util.FormatUtil
@@ -49,6 +54,29 @@ fun HomeScreen(
 
     var selectedTab by remember { mutableStateOf(HomeTab.FILES) }
 
+    // ── Posisi pill nav yang diingat lintas sesi ────────────────────────────
+    val context      = LocalContext.current
+    val scope        = rememberCoroutineScope()
+    val pillNavPrefs = remember { PillNavPreferences(context) }
+    val savedOffset by pillNavPrefs.offset.collectAsStateWithLifecycle(initialValue = null)
+
+    val pillItems = remember {
+        listOf(
+            PillNavItem(
+                key            = HomeTab.FILES.name,
+                label          = "File",
+                selectedIcon   = Icons.Rounded.FolderOpen,
+                unselectedIcon = Icons.Outlined.FolderOpen,
+            ),
+            PillNavItem(
+                key            = HomeTab.ENCODE_DECODE.name,
+                label          = "Encode/Decode",
+                selectedIcon   = Icons.Outlined.Lock,
+                unselectedIcon = Icons.Outlined.LockOpen,
+            ),
+        )
+    }
+
     if (updateState.showDialog) {
         UpdateDialog(
             state      = updateState,
@@ -59,129 +87,102 @@ fun HomeScreen(
         )
     }
 
-    Scaffold(
-        topBar = {
-            Column {
-                TopAppBar(
-                    title = {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Surface(
-                                shape    = RoundedCornerShape(10.dp),
-                                color    = MaterialTheme.colorScheme.primaryContainer,
-                                modifier = Modifier.size(32.dp)
+    Box(Modifier.fillMaxSize()) {
+        Scaffold(
+            topBar = {
+                Column {
+                    TopAppBar(
+                        title = {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Surface(
+                                    shape    = RoundedCornerShape(10.dp),
+                                    color    = MaterialTheme.colorScheme.primaryContainer,
+                                    modifier = Modifier.size(32.dp)
+                                ) {
+                                    Box(contentAlignment = Alignment.Center) {
+                                        Icon(
+                                            Icons.Outlined.Article, null,
+                                            modifier = Modifier.size(18.dp),
+                                            tint     = MaterialTheme.colorScheme.primary
+                                        )
+                                    }
+                                }
+                                Spacer(Modifier.width(10.dp))
+                                Text(
+                                    "LogLog",
+                                    style      = MaterialTheme.typography.titleLarge,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                        },
+                        actions = {
+                            AnimatedVisibility(
+                                visible = updateState.updateInfo?.isNewVersion == true,
+                                enter   = scaleIn() + fadeIn(),
+                                exit    = scaleOut() + fadeOut()
                             ) {
-                                Box(contentAlignment = Alignment.Center) {
-                                    Icon(
-                                        Icons.Outlined.Article, null,
-                                        modifier = Modifier.size(18.dp),
-                                        tint     = MaterialTheme.colorScheme.primary
-                                    )
+                                BadgedBox(badge = {
+                                    Badge(containerColor = MaterialTheme.colorScheme.error)
+                                }) {
+                                    IconButton(onClick = { vm.updateVm.showUpdateDialog() }) {
+                                        Icon(Icons.Outlined.SystemUpdate, "Update tersedia")
+                                    }
                                 }
                             }
-                            Spacer(Modifier.width(10.dp))
-                            Text(
-                                "LogLog",
-                                style      = MaterialTheme.typography.titleLarge,
-                                fontWeight = FontWeight.Bold
-                            )
-                        }
-                    },
-                    actions = {
-                        AnimatedVisibility(
-                            visible = updateState.updateInfo?.isNewVersion == true,
-                            enter   = scaleIn() + fadeIn(),
-                            exit    = scaleOut() + fadeOut()
-                        ) {
-                            BadgedBox(badge = {
-                                Badge(containerColor = MaterialTheme.colorScheme.error)
-                            }) {
-                                IconButton(onClick = { vm.updateVm.showUpdateDialog() }) {
-                                    Icon(Icons.Outlined.SystemUpdate, "Update tersedia")
-                                }
+                            IconButton(onClick = onAbout) {
+                                Icon(Icons.Outlined.Info, "Tentang")
                             }
-                        }
-                        IconButton(onClick = onAbout) {
-                            Icon(Icons.Outlined.Info, "Tentang")
-                        }
-                        IconButton(onClick = onSettings) {
-                            Icon(Icons.Outlined.Settings, "Pengaturan")
-                        }
-                    },
-                    colors = TopAppBarDefaults.topAppBarColors(
-                        containerColor = MaterialTheme.colorScheme.surface
-                    )
-                )
-                HorizontalDivider(thickness = 0.5.dp)
-            }
-        },
-        bottomBar = {
-            Column {
-                HorizontalDivider(thickness = 0.5.dp)
-                NavigationBar(
-                    containerColor = MaterialTheme.colorScheme.surface,
-                    tonalElevation = 0.dp,
-                ) {
-                    NavigationBarItem(
-                        selected = selectedTab == HomeTab.FILES,
-                        onClick  = { selectedTab = HomeTab.FILES },
-                        icon = {
-                            Icon(
-                                if (selectedTab == HomeTab.FILES) Icons.Rounded.FolderOpen
-                                else Icons.Outlined.FolderOpen,
-                                contentDescription = null
-                            )
+                            IconButton(onClick = onSettings) {
+                                Icon(Icons.Outlined.Settings, "Pengaturan")
+                            }
                         },
-                        label = { Text("File") },
-                        colors = NavigationBarItemDefaults.colors(
-                            indicatorColor = MaterialTheme.colorScheme.primaryContainer,
+                        colors = TopAppBarDefaults.topAppBarColors(
+                            containerColor = MaterialTheme.colorScheme.surface
                         )
                     )
-                    NavigationBarItem(
-                        selected = selectedTab == HomeTab.ENCODE_DECODE,
-                        onClick  = { selectedTab = HomeTab.ENCODE_DECODE },
-                        icon = {
-                            Icon(
-                                if (selectedTab == HomeTab.ENCODE_DECODE) Icons.Outlined.Lock
-                                else Icons.Outlined.LockOpen,
-                                contentDescription = null
-                            )
-                        },
-                        label = { Text("Encode/Decode") },
-                        colors = NavigationBarItemDefaults.colors(
-                            indicatorColor = MaterialTheme.colorScheme.primaryContainer,
-                        )
+                    HorizontalDivider(thickness = 0.5.dp)
+                }
+            },
+        ) { innerPadding ->
+            AnimatedContent(
+                targetState    = selectedTab,
+                transitionSpec = {
+                    val toRight = targetState.ordinal > initialState.ordinal
+                    val enter = slideInHorizontally(
+                        animationSpec  = tween(280, easing = FastOutSlowInEasing),
+                        initialOffsetX = { if (toRight) it / 5 else -it / 5 }
+                    ) + fadeIn(tween(200))
+                    val exit = slideOutHorizontally(
+                        animationSpec = tween(280, easing = FastOutSlowInEasing),
+                        targetOffsetX = { if (toRight) -it / 5 else it / 5 }
+                    ) + fadeOut(tween(150))
+                    enter togetherWith exit
+                },
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(top = innerPadding.calculateTopPadding()),
+            ) { tab ->
+                when (tab) {
+                    HomeTab.FILES        -> FileTab(
+                        vm                 = vm,
+                        onOpenFile         = onOpenFile,
+                        onShowInterstitial = onShowInterstitial,
                     )
+                    HomeTab.ENCODE_DECODE -> EncodeDecodeScreen()
                 }
             }
         }
-    ) { innerPadding ->
-        AnimatedContent(
-            targetState    = selectedTab,
-            transitionSpec = {
-                val toRight = targetState.ordinal > initialState.ordinal
-                val enter = slideInHorizontally(
-                    animationSpec  = tween(280, easing = FastOutSlowInEasing),
-                    initialOffsetX = { if (toRight) it / 5 else -it / 5 }
-                ) + fadeIn(tween(200))
-                val exit = slideOutHorizontally(
-                    animationSpec = tween(280, easing = FastOutSlowInEasing),
-                    targetOffsetX = { if (toRight) -it / 5 else it / 5 }
-                ) + fadeOut(tween(150))
-                enter togetherWith exit
+
+        // ── Pill nav mengambang — bisa ditahan & digeser bebas ke mana saja ──
+        FloatingPillNav(
+            items                 = pillItems,
+            selectedKey           = selectedTab.name,
+            onSelect              = { key -> selectedTab = HomeTab.valueOf(key) },
+            initialOffsetFraction = savedOffset,
+            onPositionChanged     = { fraction ->
+                scope.launch { pillNavPrefs.setOffset(fraction) }
             },
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(innerPadding),
-        ) { tab ->
-            when (tab) {
-                HomeTab.FILES        -> FileTab(
-                    vm                 = vm,
-                    onOpenFile         = onOpenFile,
-                    onShowInterstitial = onShowInterstitial,
-                )
-                HomeTab.ENCODE_DECODE -> EncodeDecodeScreen()
-            }
-        }
+        )
     }
 }
 

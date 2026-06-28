@@ -2,12 +2,14 @@ package com.aether.lv.ui.screen
 
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
-import androidx.compose.foundation.*
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.*
 import androidx.compose.material.icons.rounded.*
@@ -20,27 +22,32 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalUriHandler
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.aether.lv.license.LicenseState
 import com.aether.lv.license.LicenseUiState
 import com.aether.lv.license.LicenseViewModel
+import kotlinx.coroutines.delay
 import java.text.SimpleDateFormat
 import java.util.*
+import java.util.concurrent.TimeUnit
+
+// ═════════════════════════════════════════════════════════════════════════════
+// Screen
+// ═════════════════════════════════════════════════════════════════════════════
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun LicenseScreen(
     onBack : () -> Unit,
-    vm     : LicenseViewModel = viewModel()
+    vm     : LicenseViewModel = viewModel(),
 ) {
     val licenseState by vm.licenseState.collectAsStateWithLifecycle()
     val uiState      by vm.uiState.collectAsStateWithLifecycle()
@@ -49,73 +56,432 @@ fun LicenseScreen(
     val focusManager = LocalFocusManager.current
     val uriHandler   = LocalUriHandler.current
 
-    // Aktivasi TIDAK memunculkan dialog/modal apa pun — semua feedback
-    // (loading, sukses, error) ditampilkan inline di bawah field input.
-    // Hanya aksi destruktif (hapus lisensi) yang tetap pakai konfirmasi ringkas,
-    // ditampilkan sebagai state inline juga, bukan AlertDialog modal.
     var confirmRevoke by remember { mutableStateOf(false) }
+
+    // Real-time ticker untuk countdown masa berlaku
+    var nowMs by remember { mutableLongStateOf(System.currentTimeMillis()) }
+    LaunchedEffect(Unit) {
+        while (true) { delay(1_000); nowMs = System.currentTimeMillis() }
+    }
 
     Scaffold(
         topBar = {
-            Column {
-                TopAppBar(
-                    navigationIcon = {
-                        IconButton(onClick = onBack) {
-                            Icon(Icons.Rounded.ArrowBack, contentDescription = "Kembali")
-                        }
-                    },
-                    title = {
-                        Text(
-                            "Lisensi",
-                            fontWeight = FontWeight.SemiBold,
-                            style      = MaterialTheme.typography.titleLarge
-                        )
-                    },
-                    colors = TopAppBarDefaults.topAppBarColors(
-                        containerColor = MaterialTheme.colorScheme.surface
-                    )
-                )
-                HorizontalDivider(thickness = 0.5.dp)
-            }
-        }
+            TopAppBar(
+                navigationIcon = {
+                    IconButton(onClick = onBack) {
+                        Icon(Icons.Rounded.ArrowBack, "Kembali")
+                    }
+                },
+                title = { Text("Lisensi", fontWeight = FontWeight.SemiBold) },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = MaterialTheme.colorScheme.surface,
+                ),
+            )
+        },
     ) { innerPadding ->
         Column(
             modifier = Modifier
                 .fillMaxSize()
                 .verticalScroll(rememberScrollState())
                 .padding(innerPadding)
-                .padding(horizontal = 20.dp, vertical = 20.dp),
-            verticalArrangement = Arrangement.spacedBy(28.dp)
+                .padding(horizontal = 16.dp, vertical = 20.dp),
+            verticalArrangement = Arrangement.spacedBy(20.dp),
         ) {
             if (licenseState.isPremium) {
-                PremiumStatusSection(
+                ActiveLicenseSection(
                     state          = licenseState,
+                    nowMs          = nowMs,
                     confirmRevoke  = confirmRevoke,
                     onRevokeAsk    = { confirmRevoke = true },
                     onRevokeCancel = { confirmRevoke = false },
-                    onRevokeConfirm = {
-                        vm.revoke()
-                        confirmRevoke = false
-                    }
+                    onRevokeConfirm = { vm.revoke(); confirmRevoke = false },
                 )
             } else {
                 ActivateSection(
-                    inputKey       = inputKey,
-                    keyVisible     = keyVisible,
-                    uiState        = uiState,
-                    onKeyInput     = vm::onKeyInput,
+                    inputKey        = inputKey,
+                    keyVisible      = keyVisible,
+                    uiState         = uiState,
+                    onKeyInput      = vm::onKeyInput,
                     onToggleVisible = vm::toggleKeyVisibility,
-                    onActivate     = { focusManager.clearFocus(); vm.activate() },
-                    onBuy          = { uriHandler.openUri("https://t.me/AetherDev22") },
+                    onActivate      = { focusManager.clearFocus(); vm.activate() },
+                    onBuy           = { uriHandler.openUri("https://t.me/AetherDev22") },
                 )
-                Spacer(Modifier.height(4.dp))
-                FeatureList()
+                BenefitSection()
             }
         }
     }
 }
 
-// ─── Belum premium: form aktivasi + promo, layout flat tanpa card berlapis ───
+// ═════════════════════════════════════════════════════════════════════════════
+// Aktif — kartu status + detail + hapus
+// ═════════════════════════════════════════════════════════════════════════════
+
+@Composable
+private fun ActiveLicenseSection(
+    state           : LicenseState,
+    nowMs           : Long,
+    confirmRevoke   : Boolean,
+    onRevokeAsk     : () -> Unit,
+    onRevokeCancel  : () -> Unit,
+    onRevokeConfirm : () -> Unit,
+) {
+    // ── Status card ───────────────────────────────────────────────────────────
+    Surface(
+        shape = RoundedCornerShape(16.dp),
+        color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f),
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Column(
+            modifier = Modifier.padding(20.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp),
+        ) {
+            // Header
+            Row(
+                verticalAlignment     = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(14.dp),
+            ) {
+                Icon(
+                    Icons.Rounded.Verified,
+                    contentDescription = null,
+                    tint     = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(28.dp),
+                )
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        "Lisensi Aktif",
+                        style      = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color      = MaterialTheme.colorScheme.onSurface,
+                    )
+                    Text(
+                        state.productName.ifBlank { state.productId },
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                // Badge status
+                Surface(
+                    shape = RoundedCornerShape(99.dp),
+                    color = MaterialTheme.colorScheme.primary,
+                ) {
+                    Text(
+                        "Premium",
+                        style    = MaterialTheme.typography.labelSmall,
+                        color    = MaterialTheme.colorScheme.onPrimary,
+                        fontWeight = FontWeight.SemiBold,
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+                    )
+                }
+            }
+
+            HorizontalDivider(
+                color     = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f),
+                thickness = 0.5.dp,
+            )
+
+            // ── Countdown masa berlaku ─────────────────────────────────────
+            if (!state.isLifetime && state.expiresAt > 0L) {
+                val remainMs     = (state.expiresAt - nowMs).coerceAtLeast(0L)
+                val totalDays    = TimeUnit.MILLISECONDS.toDays(state.expiresAt - nowMs).coerceAtLeast(0L)
+                val hours        = TimeUnit.MILLISECONDS.toHours(remainMs) % 24
+                val minutes      = TimeUnit.MILLISECONDS.toMinutes(remainMs) % 60
+                val isNearExpiry = totalDays <= 7
+
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Row(
+                        modifier              = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment     = Alignment.CenterVertically,
+                    ) {
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            verticalAlignment     = Alignment.CenterVertically,
+                        ) {
+                            Icon(
+                                Icons.Outlined.Timer,
+                                null,
+                                modifier = Modifier.size(15.dp),
+                                tint     = if (isNearExpiry)
+                                               MaterialTheme.colorScheme.error
+                                           else
+                                               MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                            Text(
+                                "Masa berlaku",
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                        Text(
+                            formatExpiry(state.expiresAt),
+                            style      = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.SemiBold,
+                            color      = if (isNearExpiry)
+                                             MaterialTheme.colorScheme.error
+                                         else
+                                             MaterialTheme.colorScheme.onSurface,
+                        )
+                    }
+
+                    // Countdown digital
+                    Surface(
+                        shape = RoundedCornerShape(10.dp),
+                        color = if (isNearExpiry)
+                                    MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.5f)
+                                else
+                                    MaterialTheme.colorScheme.surfaceContainer,
+                    ) {
+                        Row(
+                            modifier              = Modifier.fillMaxWidth().padding(12.dp),
+                            horizontalArrangement = Arrangement.Center,
+                            verticalAlignment     = Alignment.CenterVertically,
+                        ) {
+                            CountdownUnit(totalDays.toString().padStart(2, '0'), "HARI")
+                            CountdownSep()
+                            CountdownUnit(hours.toString().padStart(2, '0'), "JAM")
+                            CountdownSep()
+                            CountdownUnit(minutes.toString().padStart(2, '0'), "MENIT")
+                        }
+                    }
+
+                    if (isNearExpiry) {
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(4.dp),
+                            verticalAlignment     = Alignment.CenterVertically,
+                        ) {
+                            Icon(
+                                Icons.Outlined.Warning,
+                                null,
+                                modifier = Modifier.size(13.dp),
+                                tint     = MaterialTheme.colorScheme.error,
+                            )
+                            Text(
+                                "Lisensi akan segera berakhir",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.error,
+                            )
+                        }
+                    }
+                }
+            } else {
+                // Lifetime
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalAlignment     = Alignment.CenterVertically,
+                ) {
+                    Icon(
+                        Icons.Outlined.AllInclusive, null,
+                        modifier = Modifier.size(15.dp),
+                        tint     = MaterialTheme.colorScheme.primary,
+                    )
+                    Text(
+                        "Berlaku seumur hidup",
+                        style  = MaterialTheme.typography.bodySmall,
+                        color  = MaterialTheme.colorScheme.primary,
+                        fontWeight = FontWeight.Medium,
+                    )
+                }
+            }
+        }
+    }
+
+    // ── Detail rows ───────────────────────────────────────────────────────────
+    Column(
+        verticalArrangement = Arrangement.spacedBy(0.dp),
+        modifier = Modifier
+            .clip(RoundedCornerShape(14.dp))
+            .background(MaterialTheme.colorScheme.surfaceContainerLow),
+    ) {
+        DetailRow(
+            icon  = Icons.Outlined.Block,
+            label = "Iklan",
+            value = if (state.isNoAds) "Dinonaktifkan" else "Aktif",
+            valueColor = if (state.isNoAds) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+        )
+        RowDivider()
+        DetailRow(
+            icon  = Icons.Outlined.Devices,
+            label = "Perangkat",
+            value = "1 perangkat (eksklusif)",
+        )
+        RowDivider()
+        DetailRow(
+            icon  = Icons.Outlined.VpnKey,
+            label = "Kunci",
+            value = obfuscateKey(state.licenseKey),
+            mono  = true,
+        )
+        RowDivider()
+        DetailRow(
+            icon  = Icons.Outlined.Schedule,
+            label = "Verifikasi terakhir",
+            value = formatVerified(state.lastVerifiedAt),
+        )
+    }
+
+    // ── Hapus lisensi ─────────────────────────────────────────────────────────
+    AnimatedContent(
+        targetState    = confirmRevoke,
+        transitionSpec = { fadeIn() togetherWith fadeOut() },
+        label          = "revokeState",
+    ) { confirming ->
+        if (confirming) {
+            Surface(
+                shape = RoundedCornerShape(14.dp),
+                color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.3f),
+            ) {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment     = Alignment.Top,
+                    ) {
+                        Icon(
+                            Icons.Outlined.Warning, null,
+                            modifier = Modifier.size(16.dp).padding(top = 1.dp),
+                            tint     = MaterialTheme.colorScheme.error,
+                        )
+                        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                            Text(
+                                "Hapus lisensi?",
+                                style      = MaterialTheme.typography.bodyMedium,
+                                fontWeight = FontWeight.SemiBold,
+                                color      = MaterialTheme.colorScheme.error,
+                            )
+                            Text(
+                                "Lisensi ini terikat ke 1 perangkat. Setelah dihapus, iklan akan aktif kembali dan slot perangkat ini dibebaskan.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedButton(
+                            onClick  = onRevokeCancel,
+                            modifier = Modifier.weight(1f),
+                            shape    = RoundedCornerShape(10.dp),
+                        ) { Text("Batal") }
+                        Button(
+                            onClick  = onRevokeConfirm,
+                            modifier = Modifier.weight(1f),
+                            shape    = RoundedCornerShape(10.dp),
+                            colors   = ButtonDefaults.buttonColors(
+                                containerColor = MaterialTheme.colorScheme.error,
+                                contentColor   = MaterialTheme.colorScheme.onError,
+                            ),
+                        ) { Text("Hapus", fontWeight = FontWeight.SemiBold) }
+                    }
+                }
+            }
+        } else {
+            TextButton(
+                onClick = onRevokeAsk,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Icon(
+                    Icons.Outlined.DeleteOutline, null,
+                    modifier = Modifier.size(15.dp),
+                    tint     = MaterialTheme.colorScheme.error.copy(alpha = 0.7f),
+                )
+                Spacer(Modifier.width(6.dp))
+                Text(
+                    "Hapus Lisensi dari Perangkat Ini",
+                    color = MaterialTheme.colorScheme.error.copy(alpha = 0.7f),
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            }
+        }
+    }
+}
+
+// ── Countdown unit widget ─────────────────────────────────────────────────────
+
+@Composable
+private fun CountdownUnit(value: String, label: String) {
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        Text(
+            value,
+            style      = MaterialTheme.typography.titleLarge,
+            fontWeight = FontWeight.Bold,
+            fontFamily = FontFamily.Monospace,
+            color      = MaterialTheme.colorScheme.onSurface,
+        )
+        Text(
+            label,
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+}
+
+@Composable
+private fun CountdownSep() {
+    Text(
+        ":",
+        style      = MaterialTheme.typography.titleLarge,
+        fontWeight = FontWeight.Bold,
+        color      = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
+        modifier   = Modifier.padding(horizontal = 10.dp, bottom = 14.dp),
+    )
+}
+
+// ── Detail row ────────────────────────────────────────────────────────────────
+
+@Composable
+private fun DetailRow(
+    icon       : ImageVector,
+    label      : String,
+    value      : String,
+    valueColor : Color = Color.Unspecified,
+    mono       : Boolean = false,
+) {
+    Row(
+        modifier              = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 13.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment     = Alignment.CenterVertically,
+    ) {
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment     = Alignment.CenterVertically,
+        ) {
+            Icon(
+                icon, null,
+                modifier = Modifier.size(15.dp),
+                tint     = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Text(
+                label,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        Text(
+            value,
+            style      = MaterialTheme.typography.bodySmall,
+            fontWeight = FontWeight.SemiBold,
+            fontFamily = if (mono) FontFamily.Monospace else FontFamily.Default,
+            color      = if (valueColor != Color.Unspecified)
+                             valueColor
+                         else
+                             MaterialTheme.colorScheme.onSurface,
+        )
+    }
+}
+
+@Composable
+private fun RowDivider() {
+    HorizontalDivider(
+        modifier  = Modifier.padding(start = 40.dp),
+        thickness = 0.4.dp,
+        color     = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f),
+    )
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
+// Belum aktif — form aktivasi
+// ═════════════════════════════════════════════════════════════════════════════
 
 @Composable
 private fun ActivateSection(
@@ -127,13 +493,13 @@ private fun ActivateSection(
     onActivate      : () -> Unit,
     onBuy           : () -> Unit,
 ) {
-    Column(verticalArrangement = Arrangement.spacedBy(18.dp)) {
+    Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
 
-        // ── Header sederhana ──────────────────────────────────────────────
+        // Header
         Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Text(
-                "Aktifkan No Ads",
-                style      = MaterialTheme.typography.headlineSmall,
+                "Aktifkan Lisensi",
+                style      = MaterialTheme.typography.titleLarge,
                 fontWeight = FontWeight.Bold,
             )
             Text(
@@ -143,40 +509,62 @@ private fun ActivateSection(
             )
         }
 
-        // ── Input field ────────────────────────────────────────────────────
+        // Info 1 device
+        Surface(
+            shape = RoundedCornerShape(10.dp),
+            color = MaterialTheme.colorScheme.surfaceContainerLow,
+        ) {
+            Row(
+                modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment     = Alignment.CenterVertically,
+            ) {
+                Icon(
+                    Icons.Outlined.PhonelinkLock, null,
+                    modifier = Modifier.size(15.dp),
+                    tint     = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Text(
+                    "Satu kode lisensi hanya dapat digunakan pada 1 perangkat.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+
+        // Input
         Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
             OutlinedTextField(
                 value         = inputKey,
                 onValueChange = onKeyInput,
                 modifier      = Modifier.fillMaxWidth(),
                 label         = { Text("Kode Lisensi") },
-                placeholder   = { Text("Contoh: AETHER-XXXX-XXXX") },
+                placeholder   = { Text("") },
                 singleLine    = true,
                 visualTransformation = if (keyVisible) VisualTransformation.None
                                        else PasswordVisualTransformation(),
                 keyboardOptions = KeyboardOptions(
                     capitalization = KeyboardCapitalization.Characters,
-                    imeAction      = ImeAction.Done
+                    imeAction      = ImeAction.Done,
                 ),
                 keyboardActions = KeyboardActions(onDone = { onActivate() }),
                 trailingIcon = {
                     IconButton(onClick = onToggleVisible) {
                         Icon(
-                            imageVector = if (keyVisible) Icons.Outlined.VisibilityOff
-                                          else Icons.Outlined.Visibility,
-                            contentDescription = if (keyVisible) "Sembunyikan" else "Tampilkan"
+                            if (keyVisible) Icons.Outlined.VisibilityOff else Icons.Outlined.Visibility,
+                            contentDescription = if (keyVisible) "Sembunyikan" else "Tampilkan",
                         )
                     }
                 },
                 isError = uiState is LicenseUiState.Error,
-                shape   = RoundedCornerShape(14.dp)
+                shape   = RoundedCornerShape(12.dp),
             )
 
-            // ── Feedback inline — tanpa modal/dialog ────────────────────────
+            // Feedback inline
             AnimatedVisibility(
                 visible = uiState !is LicenseUiState.Idle,
                 enter   = fadeIn() + expandVertically(),
-                exit    = fadeOut() + shrinkVertically()
+                exit    = fadeOut() + shrinkVertically(),
             ) {
                 when (val s = uiState) {
                     is LicenseUiState.Error   -> InlineFeedback(s.message, isError = true)
@@ -187,46 +575,57 @@ private fun ActivateSection(
 
             Button(
                 onClick  = onActivate,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(50.dp),
-                enabled = uiState !is LicenseUiState.Loading,
-                shape   = RoundedCornerShape(14.dp)
+                enabled  = uiState !is LicenseUiState.Loading,
+                modifier = Modifier.fillMaxWidth().height(50.dp),
+                shape    = RoundedCornerShape(12.dp),
             ) {
-                if (uiState is LicenseUiState.Loading) {
-                    CircularProgressIndicator(
-                        modifier    = Modifier.size(18.dp),
-                        color       = MaterialTheme.colorScheme.onPrimary,
-                        strokeWidth = 2.dp
-                    )
-                    Spacer(Modifier.width(10.dp))
-                    Text("Memverifikasi…")
-                } else {
-                    Icon(Icons.Outlined.Key, contentDescription = null, modifier = Modifier.size(17.dp))
-                    Spacer(Modifier.width(8.dp))
-                    Text("Aktifkan", fontWeight = FontWeight.SemiBold)
+                AnimatedContent(
+                    targetState = uiState is LicenseUiState.Loading,
+                    label       = "activateBtn",
+                ) { loading ->
+                    if (loading) {
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(10.dp),
+                            verticalAlignment     = Alignment.CenterVertically,
+                        ) {
+                            CircularProgressIndicator(
+                                modifier    = Modifier.size(17.dp),
+                                color       = MaterialTheme.colorScheme.onPrimary,
+                                strokeWidth = 2.dp,
+                            )
+                            Text("Memverifikasi…")
+                        }
+                    } else {
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment     = Alignment.CenterVertically,
+                        ) {
+                            Icon(Icons.Outlined.Key, null, modifier = Modifier.size(17.dp))
+                            Text("Aktifkan", fontWeight = FontWeight.SemiBold)
+                        }
+                    }
                 }
             }
         }
 
         HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
 
-        // ── Belum punya lisensi ────────────────────────────────────────────
+        // Beli
         Row(
             modifier              = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment     = Alignment.CenterVertically
+            verticalAlignment     = Alignment.CenterVertically,
         ) {
-            Column(modifier = Modifier.weight(1f)) {
+            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                 Text(
                     "Belum punya lisensi?",
                     style      = MaterialTheme.typography.bodyMedium,
-                    fontWeight = FontWeight.Medium
+                    fontWeight = FontWeight.Medium,
                 )
                 Text(
                     "Hubungi @AetherDev22 di Telegram",
                     style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
             FilledTonalButton(onClick = onBuy, shape = RoundedCornerShape(10.dp)) {
@@ -238,152 +637,46 @@ private fun ActivateSection(
     }
 }
 
+// ═════════════════════════════════════════════════════════════════════════════
+// Benefit list
+// ═════════════════════════════════════════════════════════════════════════════
+
 @Composable
-private fun FeatureList() {
-    Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+private fun BenefitSection() {
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Text(
             "Yang kamu dapat",
             style      = MaterialTheme.typography.labelMedium,
             fontWeight = FontWeight.SemiBold,
             color      = MaterialTheme.colorScheme.primary,
         )
-        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            FeatureRow(Icons.Outlined.Block,        "Tanpa iklan interstitial & rewarded")
-            FeatureRow(Icons.Outlined.Speed,        "Pengalaman lebih cepat & mulus")
-            FeatureRow(Icons.Outlined.SupportAgent, "Dukungan prioritas via Telegram")
-            FeatureRow(Icons.Outlined.PhoneAndroid, "Berlaku sesuai jumlah perangkat di paket")
-        }
-    }
-}
-
-@Composable
-private fun FeatureRow(icon: ImageVector, label: String) {
-    Row(
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
-        verticalAlignment     = Alignment.CenterVertically
-    ) {
-        Icon(icon, null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(18.dp))
-        Text(label, style = MaterialTheme.typography.bodyMedium)
-    }
-}
-
-// ─── Sudah premium: status + opsi hapus, flat tanpa kartu emas mencolok ──────
-
-@Composable
-private fun PremiumStatusSection(
-    state           : LicenseState,
-    confirmRevoke   : Boolean,
-    onRevokeAsk     : () -> Unit,
-    onRevokeCancel  : () -> Unit,
-    onRevokeConfirm : () -> Unit,
-) {
-    Column(verticalArrangement = Arrangement.spacedBy(20.dp)) {
-
-        // ── Header status ─────────────────────────────────────────────────
-        Row(
-            verticalAlignment     = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(14.dp)
-        ) {
-            Box(
-                modifier = Modifier
-                    .size(48.dp)
-                    .clip(CircleShape)
-                    .background(MaterialTheme.colorScheme.primaryContainer),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(
-                    Icons.Rounded.Verified, null,
-                    tint     = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(24.dp)
-                )
-            }
-            Column {
-                Text(
-                    "Lisensi Aktif",
-                    style      = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold,
-                )
-                Text(
-                    state.productName.ifBlank { state.productId },
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-        }
-
-        // ── Info rows — flat list, bukan card emas ─────────────────────────
-        Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
-            LicenseInfoRow(Icons.Outlined.Block,        "Iklan", if (state.isNoAds) "Dinonaktifkan" else "Aktif")
-            LicenseInfoRow(Icons.Outlined.CalendarToday, "Masa berlaku",
-                if (state.isLifetime) "Seumur hidup" else formatExpiry(state.expiresAt))
-            LicenseInfoRow(Icons.Outlined.VpnKey,        "Kunci", obfuscateKey(state.licenseKey))
-        }
-
-        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
-
-        // ── Hapus lisensi — konfirmasi inline, bukan AlertDialog ────────────
-        AnimatedContent(
-            targetState = confirmRevoke,
-            label       = "revokeConfirm"
-        ) { confirming ->
-            if (confirming) {
-                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Text(
-                        "Hapus lisensi dari perangkat ini? Iklan akan tampil kembali.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                        OutlinedButton(
-                            onClick  = onRevokeCancel,
-                            modifier = Modifier.weight(1f),
-                            shape    = RoundedCornerShape(10.dp)
-                        ) { Text("Batal") }
-                        Button(
-                            onClick  = onRevokeConfirm,
-                            modifier = Modifier.weight(1f),
-                            shape    = RoundedCornerShape(10.dp),
-                            colors   = ButtonDefaults.buttonColors(
-                                containerColor = MaterialTheme.colorScheme.errorContainer,
-                                contentColor   = MaterialTheme.colorScheme.onErrorContainer,
-                            )
-                        ) { Text("Hapus") }
-                    }
-                }
-            } else {
-                TextButton(onClick = onRevokeAsk) {
+        val items = listOf(
+            Icons.Outlined.Block        to "Tanpa iklan interstitial & rewarded",
+            Icons.Outlined.PhonelinkLock to "Terikat ke 1 perangkat — tidak bisa disalahgunakan",
+            Icons.Outlined.Speed        to "Pengalaman lebih cepat dan mulus",
+            Icons.Outlined.SupportAgent to "Dukungan prioritas via Telegram",
+        )
+        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            items.forEach { (icon, label) ->
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    verticalAlignment     = Alignment.CenterVertically,
+                ) {
                     Icon(
-                        Icons.Outlined.DeleteOutline, null,
+                        icon, null,
+                        tint     = MaterialTheme.colorScheme.primary,
                         modifier = Modifier.size(16.dp),
-                        tint     = MaterialTheme.colorScheme.error.copy(alpha = 0.8f)
                     )
-                    Spacer(Modifier.width(6.dp))
-                    Text("Hapus Lisensi", color = MaterialTheme.colorScheme.error.copy(alpha = 0.8f))
+                    Text(label, style = MaterialTheme.typography.bodySmall)
                 }
             }
         }
     }
 }
 
-@Composable
-private fun LicenseInfoRow(icon: ImageVector, label: String, value: String) {
-    Row(
-        modifier              = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment     = Alignment.CenterVertically
-    ) {
-        Row(
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalAlignment     = Alignment.CenterVertically
-        ) {
-            Icon(icon, null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(16.dp))
-            Text(label, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        }
-        Text(value, style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.SemiBold)
-    }
-}
-
-// ─── Feedback inline kecil (pengganti dialog) ─────────────────────────────────
+// ═════════════════════════════════════════════════════════════════════════════
+// Shared composables
+// ═════════════════════════════════════════════════════════════════════════════
 
 @Composable
 private fun InlineFeedback(message: String, isError: Boolean) {
@@ -392,21 +685,28 @@ private fun InlineFeedback(message: String, isError: Boolean) {
     Row(
         modifier              = Modifier.fillMaxWidth().padding(top = 2.dp),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
-        verticalAlignment     = Alignment.CenterVertically
+        verticalAlignment     = Alignment.CenterVertically,
     ) {
         Icon(icon, null, tint = color, modifier = Modifier.size(15.dp))
         Text(message, style = MaterialTheme.typography.bodySmall, color = color)
     }
 }
 
-// ─── Utils ────────────────────────────────────────────────────────────────────
+// ═════════════════════════════════════════════════════════════════════════════
+// Utils
+// ═════════════════════════════════════════════════════════════════════════════
+
 private fun formatExpiry(epochMs: Long): String {
     if (epochMs == 0L) return "Seumur hidup"
-    val sdf = SimpleDateFormat("dd MMM yyyy", Locale("id", "ID"))
-    return sdf.format(Date(epochMs))
+    return SimpleDateFormat("dd MMM yyyy", Locale("id", "ID")).format(Date(epochMs))
+}
+
+private fun formatVerified(epochMs: Long): String {
+    if (epochMs == 0L) return "Belum pernah"
+    return SimpleDateFormat("dd MMM yyyy, HH:mm", Locale("id", "ID")).format(Date(epochMs))
 }
 
 private fun obfuscateKey(key: String): String {
     if (key.length <= 8) return key
-    return key.take(4) + "•".repeat(key.length - 8) + key.takeLast(4)
+    return key.take(4) + "••••" + key.takeLast(4)
 }

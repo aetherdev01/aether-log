@@ -1,21 +1,65 @@
 package com.aether.lv.ui.screen
 
 import android.util.Base64
-import androidx.compose.animation.*
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
-import androidx.compose.foundation.horizontalScroll
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.*
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.material.icons.outlined.Clear
+import androidx.compose.material.icons.outlined.ContentCopy
+import androidx.compose.material.icons.outlined.ContentPaste
+import androidx.compose.material.icons.outlined.ErrorOutline
+import androidx.compose.material.icons.outlined.ExpandLess
+import androidx.compose.material.icons.outlined.ExpandMore
+import androidx.compose.material.icons.outlined.Lock
+import androidx.compose.material.icons.outlined.LockOpen
+import androidx.compose.material.icons.outlined.SwapVert
+import androidx.compose.material.icons.outlined.Tune
+import androidx.compose.material3.Button
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.LocalTextStyle
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Slider
+import androidx.compose.material3.SnackbarDuration
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontFamily
@@ -34,42 +78,59 @@ private enum class CharsetOption(val label: String) {
     UTF8("UTF-8"),
     ISO_8859("ISO-8859-1"),
     ASCII("ASCII");
+
     val charsetObj get() = when (this) {
-        UTF8      -> Charsets.UTF_8
-        ISO_8859  -> Charsets.ISO_8859_1
-        ASCII     -> Charsets.US_ASCII
+        UTF8     -> Charsets.UTF_8
+        ISO_8859 -> Charsets.ISO_8859_1
+        ASCII    -> Charsets.US_ASCII
     }
 }
 
 private data class EncodeDecodeState(
-    val mode       : EncodeMode    = EncodeMode.ENCODE,
-    val input      : String        = "",
-    val output     : String        = "",
-    val error      : String?       = null,
-    val useChunks  : Boolean       = false,
-    val chunkSize  : Int           = 512,
-    val charset    : CharsetOption = CharsetOption.UTF8,
-    val urlSafe    : Boolean       = false,
+    val mode      : EncodeMode    = EncodeMode.ENCODE,
+    val input     : String        = "",
+    val output    : String        = "",
+    val error     : String?       = null,
+    val useChunks : Boolean       = false,
+    val chunkSize : Int           = 512,
+    val charset   : CharsetOption = CharsetOption.UTF8,
+    val urlSafe   : Boolean       = false,
 )
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Screen
 // ─────────────────────────────────────────────────────────────────────────────
 
-@OptIn(ExperimentalMaterial3Api::class)
+/**
+ * Layar Encode/Decode Base64.
+ *
+ * Catatan rework:
+ * - Tidak punya Scaffold/TopAppBar sendiri lagi — top bar sudah disediakan
+ *   oleh HomeScreen di tingkat lebih atas, sebelumnya dobel.
+ * - Input → opsi → tombol proses digabung jadi satu kartu supaya terasa satu
+ *   alur kerja, bukan kartu-kartu lepas dengan spacing tidak konsisten.
+ * - Output tidak lagi memakai scroll vertikal + horizontal sekaligus (yang
+ *   bikin gesture rebutan); teks Base64 sekarang melipat (wrap) rapi dan
+ *   hanya discroll vertikal bila hasilnya panjang.
+ */
 @Composable
 fun EncodeDecodeScreen() {
     var s by remember { mutableStateOf(EncodeDecodeState()) }
-    val clipboard      = LocalClipboardManager.current
-    val snackHost      = remember { SnackbarHostState() }
-    val scope          = rememberCoroutineScope()
-    val scrollState    = rememberScrollState()
+    val clipboard   = LocalClipboardManager.current
+    val snackHost   = remember { SnackbarHostState() }
+    val scope       = rememberCoroutineScope()
+    val scrollState = rememberScrollState()
 
-    fun snack(msg: String) { scope.launch { snackHost.showSnackbar(msg, duration = SnackbarDuration.Short) } }
+    fun snack(msg: String) {
+        scope.launch { snackHost.showSnackbar(msg, duration = SnackbarDuration.Short) }
+    }
 
     fun process() {
         val input = s.input.trim()
-        if (input.isBlank()) { s = s.copy(error = "Input tidak boleh kosong"); return }
+        if (input.isBlank()) {
+            s = s.copy(error = "Input tidak boleh kosong")
+            return
+        }
         try {
             val result = when (s.mode) {
                 EncodeMode.ENCODE -> {
@@ -85,7 +146,7 @@ fun EncodeDecodeScreen() {
                     }
                 }
                 EncodeMode.DECODE -> {
-                    val flags = Base64.NO_WRAP or Base64.URL_SAFE  // selalu terima keduanya saat decode
+                    val flags = Base64.NO_WRAP or Base64.URL_SAFE // selalu terima keduanya saat decode
                     if (s.useChunks) {
                         input.split(Regex("\\n?---\\n?"))
                             .joinToString("") { chunk ->
@@ -116,282 +177,104 @@ fun EncodeDecodeScreen() {
         )
     }
 
-    Scaffold(
-        snackbarHost = { SnackbarHost(snackHost) },
-        topBar = {
-            Column {
-                TopAppBar(
-                    title = {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Surface(
-                                shape    = RoundedCornerShape(10.dp),
-                                color    = MaterialTheme.colorScheme.primaryContainer,
-                                modifier = Modifier.size(32.dp)
-                            ) {
-                                Box(contentAlignment = Alignment.Center) {
-                                    Icon(
-                                        Icons.Outlined.LockOpen, null,
-                                        modifier = Modifier.size(17.dp),
-                                        tint     = MaterialTheme.colorScheme.primary
-                                    )
-                                }
-                            }
-                            Spacer(Modifier.width(10.dp))
-                            Text(
-                                "Encode / Decode",
-                                style      = MaterialTheme.typography.titleLarge,
-                                fontWeight = FontWeight.Bold
-                            )
-                        }
-                    },
-                    colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.surface)
-                )
-                HorizontalDivider(thickness = 0.5.dp)
-            }
-        }
-    ) { innerPadding ->
+    Box(Modifier.fillMaxSize()) {
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(innerPadding)
                 .verticalScroll(scrollState)
-                .padding(horizontal = 16.dp, vertical = 12.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
+                .padding(horizontal = 16.dp, vertical = 16.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
 
-            // ── Mode selector ──────────────────────────────────────────────
-            ModeSelector(
-                mode     = s.mode,
-                onChange = { s = s.copy(mode = it, output = "", error = null) }
-            )
-
-            // ── Input field ────────────────────────────────────────────────
-            SectionCard {
-                Row(
-                    Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment     = Alignment.CenterVertically,
+            // ── Satu kartu utama: mode → input → opsi → aksi ─────────────────
+            Surface(
+                color          = MaterialTheme.colorScheme.surfaceContainerLow,
+                shape          = RoundedCornerShape(20.dp),
+                tonalElevation = 0.dp,
+                modifier       = Modifier.fillMaxWidth(),
+            ) {
+                Column(
+                    modifier            = Modifier.padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(16.dp),
                 ) {
-                    Text(
-                        if (s.mode == EncodeMode.ENCODE) "Teks Asli" else "String Base64",
-                        style      = MaterialTheme.typography.labelMedium,
-                        fontWeight = FontWeight.SemiBold,
-                        color      = MaterialTheme.colorScheme.primary,
+                    ModeSelector(
+                        mode     = s.mode,
+                        onChange = { s = s.copy(mode = it, output = "", error = null) },
                     )
-                    Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                        // Paste dari clipboard
-                        TooltipIconButton(
-                            icon    = Icons.Outlined.ContentPaste,
-                            tooltip = "Paste dari clipboard",
-                            onClick = {
-                                val text = clipboard.getText()?.text ?: ""
-                                s = s.copy(input = text, output = "", error = null)
-                            }
+
+                    InputSection(
+                        state    = s,
+                        onChange = { s = it },
+                    )
+
+                    OptionsSection(
+                        state    = s,
+                        onChange = { s = it },
+                    )
+
+                    Button(
+                        onClick  = ::process,
+                        enabled  = s.input.isNotBlank(),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(50.dp),
+                        shape    = RoundedCornerShape(14.dp),
+                    ) {
+                        Icon(
+                            imageVector        = if (s.mode == EncodeMode.ENCODE) Icons.Outlined.Lock else Icons.Outlined.LockOpen,
+                            contentDescription = null,
+                            modifier           = Modifier.size(20.dp),
                         )
-                        // Hapus input
-                        if (s.input.isNotEmpty()) {
-                            TooltipIconButton(
-                                icon    = Icons.Outlined.Clear,
-                                tooltip = "Hapus",
-                                onClick = { s = s.copy(input = "", output = "", error = null) }
-                            )
-                        }
+                        Spacer(Modifier.width(10.dp))
+                        Text(
+                            text       = if (s.mode == EncodeMode.ENCODE) "Encode ke Base64" else "Decode dari Base64",
+                            style      = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.SemiBold,
+                        )
                     }
                 }
-                Spacer(Modifier.height(6.dp))
-                OutlinedTextField(
-                    value         = s.input,
-                    onValueChange = { s = s.copy(input = it, output = "", error = null) },
-                    modifier      = Modifier
-                        .fillMaxWidth()
-                        .heightIn(min = 120.dp, max = 240.dp),
-                    placeholder   = {
-                        Text(
-                            if (s.mode == EncodeMode.ENCODE) "Ketik atau paste teks untuk dienkode…"
-                            else "Paste string Base64 untuk didekode…",
-                            style = MaterialTheme.typography.bodySmall,
-                        )
-                    },
-                    maxLines      = 12,
-                    textStyle     = LocalTextStyle.current.copy(
-                        fontFamily = FontFamily.Monospace,
-                        fontSize   = 13.sp,
-                    ),
-                    shape         = RoundedCornerShape(10.dp),
-                )
-                if (s.input.isNotEmpty()) {
-                    Spacer(Modifier.height(4.dp))
-                    Text(
-                        "${s.input.length} karakter",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
-                    )
-                }
             }
 
-            // ── Opsi ──────────────────────────────────────────────────────
-            OptionsCard(
-                state    = s,
-                onChange = { s = it }
-            )
-
-            // ── Tombol proses ──────────────────────────────────────────────
-            Button(
-                onClick  = ::process,
-                enabled  = s.input.isNotBlank(),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(50.dp),
-                shape    = RoundedCornerShape(12.dp),
-            ) {
-                Icon(
-                    imageVector = if (s.mode == EncodeMode.ENCODE) Icons.Outlined.Lock
-                    else Icons.Outlined.LockOpen,
-                    contentDescription = null,
-                    modifier = Modifier.size(20.dp),
-                )
-                Spacer(Modifier.width(10.dp))
-                Text(
-                    if (s.mode == EncodeMode.ENCODE) "Encode ke Base64"
-                    else "Decode dari Base64",
-                    style      = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.SemiBold,
-                )
-            }
-
-            // ── Error ──────────────────────────────────────────────────────
+            // ── Error ─────────────────────────────────────────────────────────
             AnimatedVisibility(
                 visible = s.error != null,
                 enter   = expandVertically() + fadeIn(),
                 exit    = shrinkVertically() + fadeOut(),
             ) {
-                Surface(
-                    color    = MaterialTheme.colorScheme.errorContainer,
-                    shape    = RoundedCornerShape(10.dp),
-                    modifier = Modifier.fillMaxWidth(),
-                ) {
-                    Row(
-                        modifier = Modifier.padding(12.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    ) {
-                        Icon(
-                            Icons.Outlined.ErrorOutline, null,
-                            tint     = MaterialTheme.colorScheme.error,
-                            modifier = Modifier.size(18.dp),
-                        )
-                        Text(
-                            s.error ?: "",
-                            color = MaterialTheme.colorScheme.onErrorContainer,
-                            style = MaterialTheme.typography.bodySmall,
-                        )
-                    }
-                }
+                ErrorBanner(message = s.error ?: "")
             }
 
-            // ── Output ─────────────────────────────────────────────────────
+            // ── Output ────────────────────────────────────────────────────────
             AnimatedVisibility(
                 visible = s.output.isNotEmpty(),
                 enter   = expandVertically() + fadeIn(),
                 exit    = shrinkVertically() + fadeOut(),
             ) {
-                SectionCard {
-                    Row(
-                        Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment     = Alignment.CenterVertically,
-                    ) {
-                        Row(
-                            verticalAlignment     = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(6.dp),
-                        ) {
-                            // Badge sukses
-                            Surface(
-                                color = MaterialTheme.colorScheme.primaryContainer,
-                                shape = RoundedCornerShape(6.dp),
-                            ) {
-                                Text(
-                                    if (s.mode == EncodeMode.ENCODE) "ENCODED" else "DECODED",
-                                    style    = MaterialTheme.typography.labelSmall,
-                                    color    = MaterialTheme.colorScheme.primary,
-                                    fontWeight = FontWeight.Bold,
-                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
-                                )
-                            }
-                            Text(
-                                "${s.output.length} karakter",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
-                        // Aksi output
-                        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                            TooltipIconButton(
-                                icon    = Icons.Outlined.ContentCopy,
-                                tooltip = "Salin hasil",
-                                onClick = {
-                                    clipboard.setText(AnnotatedString(s.output))
-                                    snack("Hasil disalin ke clipboard")
-                                }
-                            )
-                            TooltipIconButton(
-                                icon    = Icons.Outlined.SwapVert,
-                                tooltip = "Gunakan sebagai input",
-                                onClick = ::swap,
-                            )
-                        }
-                    }
-
-                    Spacer(Modifier.height(8.dp))
-
-                    // Output field read-only
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .heightIn(min = 100.dp, max = 280.dp)
-                            .clip(RoundedCornerShape(10.dp))
-                            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
-                            .padding(12.dp),
-                    ) {
-                        val outScroll = rememberScrollState()
-                        val hOutScroll = rememberScrollState()
-                        Text(
-                            text = s.output,
-                            modifier = Modifier
-                                .verticalScroll(outScroll)
-                                .horizontalScroll(hOutScroll),
-                            fontFamily = FontFamily.Monospace,
-                            fontSize   = 12.sp,
-                            color      = MaterialTheme.colorScheme.onSurface,
-                            lineHeight = 18.sp,
-                        )
-                    }
-
-                    Spacer(Modifier.height(8.dp))
-
-                    // Salin tombol besar
-                    OutlinedButton(
-                        onClick  = {
-                            clipboard.setText(AnnotatedString(s.output))
-                            snack("Hasil disalin ke clipboard")
-                        },
-                        modifier = Modifier.fillMaxWidth(),
-                        shape    = RoundedCornerShape(10.dp),
-                    ) {
-                        Icon(Icons.Outlined.ContentCopy, null, Modifier.size(16.dp))
-                        Spacer(Modifier.width(8.dp))
-                        Text("Salin Hasil")
-                    }
-                }
+                OutputSection(
+                    state  = s,
+                    onCopy = {
+                        clipboard.setText(AnnotatedString(s.output))
+                        snack("Hasil disalin ke clipboard")
+                    },
+                    onSwap = ::swap,
+                )
             }
 
-            Spacer(Modifier.height(80.dp))
+            // Ruang ekstra agar konten terakhir tidak tertutup pill nav mengambang.
+            Spacer(Modifier.height(96.dp))
         }
+
+        SnackbarHost(
+            hostState = snackHost,
+            modifier  = Modifier
+                .align(Alignment.BottomCenter)
+                .padding(bottom = 96.dp),
+        )
     }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Mode selector — Encode / Decode tabs
+// Mode selector — Encode / Decode segmented control
 // ─────────────────────────────────────────────────────────────────────────────
 
 @Composable
@@ -402,7 +285,7 @@ private fun ModeSelector(mode: EncodeMode, onChange: (EncodeMode) -> Unit) {
         modifier = Modifier.fillMaxWidth(),
     ) {
         Row(
-            modifier = Modifier
+            modifier              = Modifier
                 .fillMaxWidth()
                 .padding(4.dp),
             horizontalArrangement = Arrangement.spacedBy(4.dp),
@@ -412,8 +295,7 @@ private fun ModeSelector(mode: EncodeMode, onChange: (EncodeMode) -> Unit) {
                 Surface(
                     onClick  = { onChange(m) },
                     modifier = Modifier.weight(1f),
-                    color    = if (selected) MaterialTheme.colorScheme.primaryContainer
-                               else Color.Transparent,
+                    color    = if (selected) MaterialTheme.colorScheme.primaryContainer else Color.Transparent,
                     shape    = RoundedCornerShape(10.dp),
                 ) {
                     Row(
@@ -422,20 +304,17 @@ private fun ModeSelector(mode: EncodeMode, onChange: (EncodeMode) -> Unit) {
                         verticalAlignment     = Alignment.CenterVertically,
                     ) {
                         Icon(
-                            imageVector = if (m == EncodeMode.ENCODE) Icons.Outlined.Lock
-                                         else Icons.Outlined.LockOpen,
+                            imageVector        = if (m == EncodeMode.ENCODE) Icons.Outlined.Lock else Icons.Outlined.LockOpen,
                             contentDescription = null,
-                            modifier = Modifier.size(16.dp),
-                            tint     = if (selected) MaterialTheme.colorScheme.primary
-                                       else MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier           = Modifier.size(16.dp),
+                            tint               = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                         Spacer(Modifier.width(6.dp))
                         Text(
-                            if (m == EncodeMode.ENCODE) "Encode" else "Decode",
+                            text       = if (m == EncodeMode.ENCODE) "Encode" else "Decode",
                             style      = MaterialTheme.typography.labelLarge,
                             fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
-                            color      = if (selected) MaterialTheme.colorScheme.primary
-                                         else MaterialTheme.colorScheme.onSurfaceVariant,
+                            color      = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
                 }
@@ -445,84 +324,161 @@ private fun ModeSelector(mode: EncodeMode, onChange: (EncodeMode) -> Unit) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Options card
+// Input section
 // ─────────────────────────────────────────────────────────────────────────────
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun OptionsCard(
+private fun InputSection(
+    state    : EncodeDecodeState,
+    onChange : (EncodeDecodeState) -> Unit,
+) {
+    val clipboard = LocalClipboardManager.current
+
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(
+            modifier              = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment     = Alignment.CenterVertically,
+        ) {
+            Text(
+                text       = if (state.mode == EncodeMode.ENCODE) "Teks Asli" else "String Base64",
+                style      = MaterialTheme.typography.labelMedium,
+                fontWeight = FontWeight.SemiBold,
+                color      = MaterialTheme.colorScheme.primary,
+            )
+            Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+                TooltipIconButton(
+                    icon    = Icons.Outlined.ContentPaste,
+                    tooltip = "Paste dari clipboard",
+                    onClick = {
+                        val text = clipboard.getText()?.text ?: ""
+                        onChange(state.copy(input = text, output = "", error = null))
+                    },
+                )
+                if (state.input.isNotEmpty()) {
+                    TooltipIconButton(
+                        icon    = Icons.Outlined.Clear,
+                        tooltip = "Hapus",
+                        onClick = { onChange(state.copy(input = "", output = "", error = null)) },
+                    )
+                }
+            }
+        }
+
+        OutlinedTextField(
+            value         = state.input,
+            onValueChange = { onChange(state.copy(input = it, output = "", error = null)) },
+            modifier      = Modifier
+                .fillMaxWidth()
+                .heightIn(min = 120.dp, max = 220.dp),
+            placeholder   = {
+                Text(
+                    text  = if (state.mode == EncodeMode.ENCODE)
+                        "Ketik atau paste teks untuk dienkode…"
+                    else
+                        "Paste string Base64 untuk didekode…",
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            },
+            textStyle     = LocalTextStyle.current.copy(
+                fontFamily = FontFamily.Monospace,
+                fontSize   = 13.sp,
+            ),
+            shape         = RoundedCornerShape(12.dp),
+        )
+
+        if (state.input.isNotEmpty()) {
+            Text(
+                text  = "${state.input.length} karakter",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+            )
+        }
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Options section — collapsible, opsi tambahan (charset, url-safe, chunk)
+// ─────────────────────────────────────────────────────────────────────────────
+
+@Composable
+private fun OptionsSection(
     state    : EncodeDecodeState,
     onChange : (EncodeDecodeState) -> Unit,
 ) {
     var expanded by remember { mutableStateOf(false) }
+    val activeCount = listOf(
+        state.useChunks,
+        state.urlSafe,
+        state.charset != CharsetOption.UTF8,
+    ).count { it }
 
-    SectionCard {
-        // Header opsi — collapsible
+    Column {
         Surface(
-            onClick = { expanded = !expanded },
-            color   = Color.Transparent,
+            onClick  = { expanded = !expanded },
+            color    = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
+            shape    = RoundedCornerShape(12.dp),
             modifier = Modifier.fillMaxWidth(),
         ) {
             Row(
-                Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                modifier              = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 12.dp, vertical = 10.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment     = Alignment.CenterVertically,
             ) {
                 Row(
                     verticalAlignment     = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
                     Icon(
-                        Icons.Outlined.Tune, null,
-                        modifier = Modifier.size(16.dp),
-                        tint     = MaterialTheme.colorScheme.onSurfaceVariant,
+                        imageVector        = Icons.Outlined.Tune,
+                        contentDescription = null,
+                        modifier           = Modifier.size(16.dp),
+                        tint               = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                     Text(
-                        "Opsi Tambahan",
+                        text  = "Opsi Tambahan",
                         style = MaterialTheme.typography.labelMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
-                    // Badge aktif
-                    val activeCount = listOf(state.useChunks, state.urlSafe, state.charset != CharsetOption.UTF8)
-                        .count { it }
                     if (activeCount > 0) {
                         Surface(
                             color = MaterialTheme.colorScheme.primary,
                             shape = RoundedCornerShape(99.dp),
                         ) {
                             Text(
-                                "$activeCount",
-                                style    = MaterialTheme.typography.labelSmall,
-                                color    = MaterialTheme.colorScheme.onPrimary,
-                                modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.dp),
+                                text       = "$activeCount",
+                                style      = MaterialTheme.typography.labelSmall,
+                                color      = MaterialTheme.colorScheme.onPrimary,
+                                fontWeight = FontWeight.SemiBold,
+                                modifier   = Modifier.padding(horizontal = 6.dp, vertical = 1.dp),
                             )
                         }
                     }
                 }
                 Icon(
-                    if (expanded) Icons.Outlined.ExpandLess else Icons.Outlined.ExpandMore,
-                    null,
-                    modifier = Modifier.size(18.dp),
-                    tint     = MaterialTheme.colorScheme.onSurfaceVariant,
+                    imageVector        = if (expanded) Icons.Outlined.ExpandLess else Icons.Outlined.ExpandMore,
+                    contentDescription = null,
+                    modifier           = Modifier.size(18.dp),
+                    tint               = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
         }
 
         AnimatedVisibility(visible = expanded) {
             Column(
-                modifier = Modifier.padding(top = 8.dp),
-                verticalArrangement = Arrangement.spacedBy(10.dp),
+                modifier            = Modifier.padding(top = 12.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp),
             ) {
-                HorizontalDivider(thickness = 0.5.dp)
-
-                // ── Charset ────────────────────────────────────────────────
-                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                // ── Charset ──────────────────────────────────────────────────
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text(
-                        "Charset",
+                        text  = "Charset",
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
-                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         CharsetOption.entries.forEach { opt ->
                             FilterChip(
                                 selected = state.charset == opt,
@@ -533,56 +489,29 @@ private fun OptionsCard(
                     }
                 }
 
-                // ── URL-safe ───────────────────────────────────────────────
-                Row(
-                    Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment     = Alignment.CenterVertically,
-                ) {
-                    Column {
-                        Text("URL-Safe Base64", style = MaterialTheme.typography.bodySmall)
-                        Text(
-                            "Gunakan - dan _ ganti + dan /",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                    Switch(
-                        checked         = state.urlSafe,
-                        onCheckedChange = { onChange(state.copy(urlSafe = it, output = "", error = null)) },
-                    )
-                }
+                OptionToggleRow(
+                    title           = "URL-Safe Base64",
+                    subtitle        = "Gunakan - dan _ ganti + dan /",
+                    checked         = state.urlSafe,
+                    onCheckedChange = { onChange(state.copy(urlSafe = it, output = "", error = null)) },
+                )
 
-                // ── Chunk mode ─────────────────────────────────────────────
-                Row(
-                    Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment     = Alignment.CenterVertically,
-                ) {
-                    Column {
-                        Text("Mode Chunk", style = MaterialTheme.typography.bodySmall)
-                        Text(
-                            "Proses per blok, dipisah dengan ---",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                    Switch(
-                        checked         = state.useChunks,
-                        onCheckedChange = { onChange(state.copy(useChunks = it, output = "", error = null)) },
-                    )
-                }
+                OptionToggleRow(
+                    title           = "Mode Chunk",
+                    subtitle        = "Proses per blok, dipisah dengan ---",
+                    checked         = state.useChunks,
+                    onCheckedChange = { onChange(state.copy(useChunks = it, output = "", error = null)) },
+                )
 
-                // ── Chunk size slider (hanya jika chunk aktif) ─────────────
                 AnimatedVisibility(visible = state.useChunks) {
-                    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                         Row(
-                            Modifier.fillMaxWidth(),
+                            modifier              = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.SpaceBetween,
                         ) {
                             Text("Ukuran Chunk", style = MaterialTheme.typography.labelSmall)
                             Text(
-                                "${state.chunkSize} byte",
+                                text       = "${state.chunkSize} byte",
                                 style      = MaterialTheme.typography.labelSmall,
                                 fontWeight = FontWeight.SemiBold,
                                 color      = MaterialTheme.colorScheme.primary,
@@ -590,14 +519,15 @@ private fun OptionsCard(
                         }
                         Slider(
                             value         = state.chunkSize.toFloat(),
-                            onValueChange = {
-                                onChange(state.copy(chunkSize = it.toInt(), output = "", error = null))
-                            },
+                            onValueChange = { onChange(state.copy(chunkSize = it.toInt(), output = "", error = null)) },
                             valueRange    = 64f..4096f,
                             steps         = 62,
                             modifier      = Modifier.fillMaxWidth(),
                         )
-                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                        Row(
+                            modifier              = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                        ) {
                             Text("64", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             Text("4096", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
@@ -608,39 +538,173 @@ private fun OptionsCard(
     }
 }
 
+@Composable
+private fun OptionToggleRow(
+    title           : String,
+    subtitle        : String,
+    checked         : Boolean,
+    onCheckedChange : (Boolean) -> Unit,
+) {
+    Row(
+        modifier              = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment     = Alignment.CenterVertically,
+    ) {
+        Column(
+            modifier            = Modifier.weight(1f),
+            verticalArrangement = Arrangement.spacedBy(2.dp),
+        ) {
+            Text(title, style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Medium)
+            Text(subtitle, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        Spacer(Modifier.width(12.dp))
+        Switch(checked = checked, onCheckedChange = onCheckedChange)
+    }
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
-// Helpers
+// Output section
 // ─────────────────────────────────────────────────────────────────────────────
 
 @Composable
-private fun SectionCard(content: @Composable ColumnScope.() -> Unit) {
+private fun OutputSection(
+    state  : EncodeDecodeState,
+    onCopy : () -> Unit,
+    onSwap : () -> Unit,
+) {
     Surface(
         color          = MaterialTheme.colorScheme.surfaceContainerLow,
-        shape          = RoundedCornerShape(16.dp),
+        shape          = RoundedCornerShape(20.dp),
         tonalElevation = 0.dp,
         modifier       = Modifier.fillMaxWidth(),
     ) {
         Column(
-            modifier = Modifier.padding(16.dp),
-            content  = content,
-        )
+            modifier            = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Row(
+                modifier              = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment     = Alignment.CenterVertically,
+            ) {
+                Row(
+                    verticalAlignment     = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    Surface(
+                        color = MaterialTheme.colorScheme.primaryContainer,
+                        shape = RoundedCornerShape(6.dp),
+                    ) {
+                        Text(
+                            text       = if (state.mode == EncodeMode.ENCODE) "ENCODED" else "DECODED",
+                            style      = MaterialTheme.typography.labelSmall,
+                            color      = MaterialTheme.colorScheme.primary,
+                            fontWeight = FontWeight.Bold,
+                            modifier   = Modifier.padding(horizontal = 7.dp, vertical = 3.dp),
+                        )
+                    }
+                    Text(
+                        text  = "${state.output.length} karakter",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+                    TooltipIconButton(
+                        icon    = Icons.Outlined.SwapVert,
+                        tooltip = "Gunakan sebagai input",
+                        onClick = onSwap,
+                    )
+                    TooltipIconButton(
+                        icon    = Icons.Outlined.ContentCopy,
+                        tooltip = "Salin hasil",
+                        onClick = onCopy,
+                    )
+                }
+            }
+
+            // Output di-wrap (tanpa scroll horizontal) supaya tidak ada gesture
+            // ganda yang rebutan dengan scroll halaman — hanya scroll vertikal
+            // jika hasilnya panjang.
+            SelectionContainer {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = 90.dp, max = 260.dp)
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+                        .verticalScroll(rememberScrollState())
+                        .padding(12.dp),
+                ) {
+                    Text(
+                        text       = state.output,
+                        fontFamily = FontFamily.Monospace,
+                        fontSize   = 12.sp,
+                        lineHeight = 18.sp,
+                        color      = MaterialTheme.colorScheme.onSurface,
+                    )
+                }
+            }
+
+            OutlinedButton(
+                onClick  = onCopy,
+                modifier = Modifier.fillMaxWidth(),
+                shape    = RoundedCornerShape(12.dp),
+            ) {
+                Icon(Icons.Outlined.ContentCopy, contentDescription = null, modifier = Modifier.size(16.dp))
+                Spacer(Modifier.width(8.dp))
+                Text("Salin Hasil")
+            }
+        }
     }
 }
 
 @Composable
+private fun ErrorBanner(message: String) {
+    Surface(
+        color    = MaterialTheme.colorScheme.errorContainer,
+        shape    = RoundedCornerShape(14.dp),
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Row(
+            modifier              = Modifier.padding(14.dp),
+            verticalAlignment     = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            Icon(
+                imageVector        = Icons.Outlined.ErrorOutline,
+                contentDescription = null,
+                tint               = MaterialTheme.colorScheme.error,
+                modifier           = Modifier.size(18.dp),
+            )
+            Text(
+                text  = message,
+                color = MaterialTheme.colorScheme.onErrorContainer,
+                style = MaterialTheme.typography.bodySmall,
+            )
+        }
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Small helpers
+// ─────────────────────────────────────────────────────────────────────────────
+
+@Composable
 private fun TooltipIconButton(
-    icon    : androidx.compose.ui.graphics.vector.ImageVector,
+    icon    : ImageVector,
     tooltip : String,
     onClick : () -> Unit,
 ) {
     IconButton(
         onClick  = onClick,
-        modifier = Modifier.size(32.dp),
+        modifier = Modifier.size(34.dp),
     ) {
         Icon(
-            icon, tooltip,
-            modifier = Modifier.size(18.dp),
-            tint     = MaterialTheme.colorScheme.onSurfaceVariant,
+            imageVector        = icon,
+            contentDescription = tooltip,
+            modifier           = Modifier.size(18.dp),
+            tint               = MaterialTheme.colorScheme.onSurfaceVariant,
         )
     }
 }
