@@ -6,6 +6,7 @@ import android.util.Log
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.*
 import androidx.datastore.preferences.preferencesDataStore
+import com.aether.lv.util.LicenseNative
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.withContext
@@ -88,7 +89,9 @@ class LicenseRepository(private val context: Context) {
     // ── Aktivasi lisensi baru ─────────────────────────────────────────────────
     suspend fun activate(licenseKey: String): ActivateResult = withContext(Dispatchers.IO) {
         val key = licenseKey.trim().uppercase()
-        if (key.length < 8) return@withContext ActivateResult.Error("Kode lisensi tidak valid")
+        // Validasi format & checksum di native layer (sebelum hit server)
+        if (!LicenseNative.isValidFormat(key))
+            return@withContext ActivateResult.Error("Format kode lisensi tidak valid")
 
         try {
             // 1. Hit /activate endpoint
