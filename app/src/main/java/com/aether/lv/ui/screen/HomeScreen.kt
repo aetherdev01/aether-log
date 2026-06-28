@@ -6,6 +6,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.*
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -17,9 +18,9 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -30,7 +31,6 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.aether.lv.ads.AdsManager
 import com.aether.lv.ads.RewardedNoAdsManager
 import com.aether.lv.data.model.RecentFile
-import com.aether.lv.data.preferences.PillNavPreferences
 import com.aether.lv.ui.component.FloatingPillNav
 import com.aether.lv.ui.component.PillNavItem
 import com.aether.lv.update.UpdateDialog
@@ -40,6 +40,12 @@ import kotlinx.coroutines.launch
 
 // ── Tab destination ───────────────────────────────────────────────────────────
 private enum class HomeTab { FILES, ENCODE_DECODE }
+
+/**
+ * Ambang swipe horizontal (px) agar tab benar-benar berganti.
+ * Cukup besar agar scroll vertikal tidak terpicu, tapi terasa responsif.
+ */
+private const val SWIPE_THRESHOLD_PX = 80f
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -54,11 +60,8 @@ fun HomeScreen(
 
     var selectedTab by remember { mutableStateOf(HomeTab.FILES) }
 
-    // ── Posisi pill nav yang diingat lintas sesi ────────────────────────────
-    val context      = LocalContext.current
-    val scope        = rememberCoroutineScope()
-    val pillNavPrefs = remember { PillNavPreferences(context) }
-    val savedOffset by pillNavPrefs.offset.collectAsStateWithLifecycle(initialValue = null)
+    // Akumulasi drag horizontal sesi ini (di-reset tiap kali drag selesai)
+    var dragAccum by remember { mutableFloatStateOf(0f) }
 
     val pillItems = remember {
         listOf(
@@ -84,6 +87,36 @@ fun HomeScreen(
             onDownload = { vm.updateVm.startDownload() },
             onInstall  = { vm.updateVm.install() },
             onRetry    = { vm.updateVm.retryDownload() }
+        )
+    }
+
+    /**
+     * Modifier gesture swipe hold+drag ala iOS:
+     * - Pengguna tahan (long-press tidak dibutuhkan — detectHorizontalDragGestures
+     *   sudah menunggu jarak minimum sebelum lock, mirip perilaku iOS).
+     * - Geser ke kiri  → tab berikutnya (FILES → ENCODE_DECODE)
+     * - Geser ke kanan → tab sebelumnya (ENCODE_DECODE → FILES)
+     * - Akumulasi reset setelah tab berganti agar tidak skip dua tab sekaligus.
+     */
+    val swipeModifier = Modifier.pointerInput(selectedTab) {
+        detectHorizontalDragGestures(
+            onDragStart  = { dragAccum = 0f },
+            onDragCancel = { dragAccum = 0f },
+            onDragEnd    = { dragAccum = 0f },
+            onHorizontalDrag = { change, dragAmount ->
+                change.consume()
+                dragAccum += dragAmount
+                when {
+                    dragAccum < -SWIPE_THRESHOLD_PX && selectedTab == HomeTab.FILES -> {
+                        selectedTab = HomeTab.ENCODE_DECODE
+                        dragAccum   = 0f
+                    }
+                    dragAccum > SWIPE_THRESHOLD_PX && selectedTab == HomeTab.ENCODE_DECODE -> {
+                        selectedTab = HomeTab.FILES
+                        dragAccum   = 0f
+                    }
+                }
+            },
         )
     }
 
@@ -144,6 +177,7 @@ fun HomeScreen(
                 }
             },
         ) { innerPadding ->
+            // Konten tab — gesture swipe dipasang di sini agar seluruh area bisa diswipe
             AnimatedContent(
                 targetState    = selectedTab,
                 transitionSpec = {
@@ -160,10 +194,11 @@ fun HomeScreen(
                 },
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(top = innerPadding.calculateTopPadding()),
+                    .padding(top = innerPadding.calculateTopPadding())
+                    .then(swipeModifier),
             ) { tab ->
                 when (tab) {
-                    HomeTab.FILES        -> FileTab(
+                    HomeTab.FILES         -> FileTab(
                         vm                 = vm,
                         onOpenFile         = onOpenFile,
                         onShowInterstitial = onShowInterstitial,
@@ -173,15 +208,14 @@ fun HomeScreen(
             }
         }
 
-        // ── Pill nav mengambang — bisa ditahan & digeser bebas ke mana saja ──
+        // ── Pill nav — posisi tetap di bottom-center ──────────────────────────
         FloatingPillNav(
-            items                 = pillItems,
-            selectedKey           = selectedTab.name,
-            onSelect              = { key -> selectedTab = HomeTab.valueOf(key) },
-            initialOffsetFraction = savedOffset,
-            onPositionChanged     = { fraction ->
-                scope.launch { pillNavPrefs.setOffset(fraction) }
-            },
+            items       = pillItems,
+            selectedKey = selectedTab.name,
+            onSelect    = { key -> selectedTab = HomeTab.valueOf(key) },
+            modifier    = Modifier
+                .align(Alignment.BottomCenter)
+                .padding(bottom = 28.dp),
         )
     }
 }
@@ -334,7 +368,7 @@ private fun FileTab(
             }
         }
 
-        // FAB di atas konten tab (bukan di Scaffold agar tidak muncul di tab Encode)
+        // FAB di atas konten tab
         ExtendedFloatingActionButton(
             onClick        = { filePicker.launch(arrayOf("*/*")) },
             icon           = { Icon(Icons.Rounded.FolderOpen, null) },
@@ -400,7 +434,6 @@ private fun RecentFileRow(
             verticalAlignment     = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            // ── Icon kiri ─────────────────────────────────────────────────
             Box(
                 modifier = Modifier
                     .size(38.dp)
@@ -416,12 +449,10 @@ private fun RecentFileRow(
                 )
             }
 
-            // ── Teks tengah ───────────────────────────────────────────────
             Column(
                 modifier            = Modifier.weight(1f),
                 verticalArrangement = Arrangement.spacedBy(4.dp)
             ) {
-                // Baris 1 — nama file
                 Text(
                     text       = file.displayName,
                     style      = MaterialTheme.typography.bodyMedium,
@@ -434,7 +465,6 @@ private fun RecentFileRow(
                         MaterialTheme.colorScheme.onSurface
                 )
 
-                // Baris 2 — info utama: badge tipe file + waktu dibuka
                 Row(
                     verticalAlignment     = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(6.dp)
@@ -464,7 +494,6 @@ private fun RecentFileRow(
                     )
                 }
 
-                // Baris 3 — info sekunder: ukuran & jumlah baris (lebih redup)
                 Row(
                     verticalAlignment     = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(4.dp)
@@ -485,7 +514,6 @@ private fun RecentFileRow(
                 }
             }
 
-            // ── Menu kanan ────────────────────────────────────────────────
             Box {
                 IconButton(
                     onClick  = { showMenu = true },
@@ -518,13 +546,13 @@ private fun RecentFileRow(
 private fun fileTypeColor(ext: String): Color {
     val scheme = MaterialTheme.colorScheme
     return when {
-        ext == "json"                   -> Color(0xFF43A047)
-        ext == "xml"                    -> Color(0xFF1E88E5)
-        ext == "yaml" || ext == "yml"   -> Color(0xFFFB8C00)
+        ext == "json"                      -> Color(0xFF43A047)
+        ext == "xml"                       -> Color(0xFF1E88E5)
+        ext == "yaml" || ext == "yml"      -> Color(0xFFFB8C00)
         ext == "err" || ext.contains("err") -> Color(0xFFE53935)
         ext == "out" || ext.contains("out") -> Color(0xFF8E24AA)
-        ext.endsWith(".gz")             -> Color(0xFF6D4C41)
-        else                            -> scheme.primary
+        ext.endsWith(".gz")                -> Color(0xFF6D4C41)
+        else                               -> scheme.primary
     }
 }
 
