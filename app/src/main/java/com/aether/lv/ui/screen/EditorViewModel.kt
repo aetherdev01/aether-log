@@ -22,7 +22,6 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.BufferedWriter
 import java.io.OutputStreamWriter
-import android.util.Base64
 
 // ── Undo/Redo snapshot ────────────────────────────────────────────────────────
 private data class TextSnapshot(
@@ -78,18 +77,9 @@ data class EditorUiState(
     // Go to line dialog
     val goToLineVisible  : Boolean        = false,
 
-    // Base64 dialog
-    val base64DialogVisible : Boolean     = false,
-    val base64Input         : String      = "",
-    val base64Output        : String      = "",
-    val base64Mode          : Base64Mode  = Base64Mode.ENCODE,
-    val base64Error         : String?     = null,
-
     // Snackbar
     val snackMessage     : String?        = null,
 )
-
-enum class Base64Mode { ENCODE, DECODE }
 
 private const val UNDO_DEBOUNCE_MS      = 400L
 private const val UNDO_HISTORY_MAX      = 200
@@ -601,102 +591,6 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
     fun setFontSize(sz: Float)        { _state.update { it.copy(fontSize = sz.coerceIn(8f, 32f)) } }
     fun toggleWordWrap()              { _state.update { it.copy(wordWrap = !it.wordWrap) } }
     fun toggleLineNumbers()           { _state.update { it.copy(showLineNumbers = !it.showLineNumbers) } }
-
-    // ─────────────────────────────────────────────────────────────────────────
-    // Base64 Encode / Decode
-    // ─────────────────────────────────────────────────────────────────────────
-
-    fun showBase64Dialog(mode: Base64Mode = Base64Mode.ENCODE) {
-        // Jika ada seleksi teks, jadikan input awal
-        val sel = _state.value.textField.selection
-        val initInput = if (sel.min != sel.max) {
-            _state.value.textField.text.substring(sel.min, sel.max)
-        } else ""
-        _state.update {
-            it.copy(
-                base64DialogVisible = true,
-                base64Mode          = mode,
-                base64Input         = initInput,
-                base64Output        = "",
-                base64Error         = null,
-            )
-        }
-    }
-
-    fun hideBase64Dialog() {
-        _state.update { it.copy(base64DialogVisible = false, base64Error = null) }
-    }
-
-    fun setBase64Mode(mode: Base64Mode) {
-        _state.update { it.copy(base64Mode = mode, base64Output = "", base64Error = null) }
-    }
-
-    fun setBase64Input(text: String) {
-        _state.update { it.copy(base64Input = text, base64Output = "", base64Error = null) }
-    }
-
-    /**
-     * Proses encode/decode. Mendukung Base64 standar (0–255 byte via URL_SAFE fallback)
-     * dan chunk 512-byte: setiap 512 byte dikodekan/didekodekan secara independen
-     * lalu digabungkan kembali dengan separator "---".
-     */
-    fun processBase64(useChunks: Boolean = false) {
-        val input = _state.value.base64Input
-        val mode  = _state.value.base64Mode
-        if (input.isBlank()) {
-            _state.update { it.copy(base64Error = "Input kosong") }
-            return
-        }
-        try {
-            val result: String = when (mode) {
-                Base64Mode.ENCODE -> {
-                    val bytes = input.toByteArray(Charsets.UTF_8)
-                    if (useChunks) {
-                        bytes.toList().chunked(512)
-                            .joinToString("\n---\n") { chunk ->
-                                Base64.encodeToString(chunk.toByteArray(), Base64.NO_WRAP)
-                            }
-                    } else {
-                        Base64.encodeToString(bytes, Base64.NO_WRAP)
-                    }
-                }
-                Base64Mode.DECODE -> {
-                    if (useChunks) {
-                        val chunks = input.split(Regex("\\n?---\\n?"))
-                        val decoded = chunks.joinToString("") { chunk ->
-                            val b = Base64.decode(chunk.trim(), Base64.NO_WRAP or Base64.URL_SAFE)
-                            String(b, Charsets.UTF_8)
-                        }
-                        decoded
-                    } else {
-                        val flags = Base64.NO_WRAP or Base64.URL_SAFE
-                        val bytes = Base64.decode(input.trim(), flags)
-                        String(bytes, Charsets.UTF_8)
-                    }
-                }
-            }
-            _state.update { it.copy(base64Output = result, base64Error = null) }
-        } catch (e: Exception) {
-            val msg = when (mode) {
-                Base64Mode.DECODE -> "Gagal decode: input bukan Base64 valid"
-                Base64Mode.ENCODE -> "Gagal encode: ${e.message}"
-            }
-            _state.update { it.copy(base64Output = "", base64Error = msg) }
-        }
-    }
-
-    /** Tempel output Base64 ke editor (replace seleksi atau sisipkan di kursor) */
-    fun applyBase64Output() {
-        val output = _state.value.base64Output
-        if (output.isEmpty()) return
-        val s   = _state.value.textField
-        val sel = s.selection
-        val newText = s.text.substring(0, sel.min) + output + s.text.substring(sel.max)
-        val newSel  = TextRange(sel.min + output.length)
-        onTextChange(TextFieldValue(newText, newSel))
-        hideBase64Dialog()
-        snack("Base64 diterapkan ke editor")
-    }
 
     // ─────────────────────────────────────────────────────────────────────────
     // Snackbar

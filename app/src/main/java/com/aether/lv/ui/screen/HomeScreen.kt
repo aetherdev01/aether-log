@@ -33,6 +33,9 @@ import com.aether.lv.util.FileTypeUtil
 import com.aether.lv.util.FormatUtil
 import kotlinx.coroutines.launch
 
+// ── Tab destination ───────────────────────────────────────────────────────────
+private enum class HomeTab { FILES, ENCODE_DECODE }
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun HomeScreen(
@@ -42,40 +45,9 @@ fun HomeScreen(
     onShowInterstitial : (() -> Unit) -> Unit = { it() },
     vm                 : HomeViewModel = viewModel()
 ) {
-    val recentFiles       by vm.recentFiles.collectAsStateWithLifecycle()
-    val updateState       by vm.updateVm.state.collectAsStateWithLifecycle()
-    val licenseState      by vm.licenseVm.licenseState.collectAsStateWithLifecycle()
-    val noAdsState        by RewardedNoAdsManager.state.collectAsStateWithLifecycle()
-    var showClearDialog   by remember { mutableStateOf(false) }
-    val snackbarHostState = remember { SnackbarHostState() }
-    val scope             = rememberCoroutineScope()
-    var fileOpenCount     by remember { mutableStateOf(0) }
+    val updateState by vm.updateVm.state.collectAsStateWithLifecycle()
 
-    // Ticker untuk countdown no-ads (dipakai untuk gating iklan, tidak ditampilkan di Home)
-    var tickMs by remember { mutableLongStateOf(System.currentTimeMillis()) }
-    LaunchedEffect(Unit) {
-        while (true) {
-            kotlinx.coroutines.delay(1_000)
-            tickMs = System.currentTimeMillis()
-        }
-    }
-    val noAdsRemainingMs = (noAdsState.noAdsUntil - tickMs).coerceAtLeast(0L)
-    val isNoAdsActive    = noAdsRemainingMs > 0L
-    // Premium dari lisensi → iklan dimatikan permanen, terlepas dari countdown rewarded.
-    val isAdsDisabled    = licenseState.isNoAds || isNoAdsActive
-
-    val handleOpenFile: (Uri) -> Unit = { uri ->
-        fileOpenCount++
-        if (!isAdsDisabled && fileOpenCount % 2 == 0 && AdsManager.interstitialReady.value) {
-            onShowInterstitial { onOpenFile(uri) }
-        } else {
-            onOpenFile(uri)
-        }
-    }
-
-    val filePicker = rememberLauncherForActivityResult(
-        ActivityResultContracts.OpenDocument()
-    ) { uri: Uri? -> uri?.let { handleOpenFile(it) } }
+    var selectedTab by remember { mutableStateOf(HomeTab.FILES) }
 
     if (updateState.showDialog) {
         UpdateDialog(
@@ -88,16 +60,14 @@ fun HomeScreen(
     }
 
     Scaffold(
-        snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             Column {
                 TopAppBar(
                     title = {
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            // Logo pill
                             Surface(
-                                shape  = RoundedCornerShape(10.dp),
-                                color  = MaterialTheme.colorScheme.primaryContainer,
+                                shape    = RoundedCornerShape(10.dp),
+                                color    = MaterialTheme.colorScheme.primaryContainer,
                                 modifier = Modifier.size(32.dp)
                             ) {
                                 Box(contentAlignment = Alignment.Center) {
@@ -117,7 +87,6 @@ fun HomeScreen(
                         }
                     },
                     actions = {
-                        // Update badge
                         AnimatedVisibility(
                             visible = updateState.updateInfo?.isNewVersion == true,
                             enter   = scaleIn() + fadeIn(),
@@ -145,21 +114,121 @@ fun HomeScreen(
                 HorizontalDivider(thickness = 0.5.dp)
             }
         },
-        floatingActionButton = {
-            ExtendedFloatingActionButton(
-                onClick        = { filePicker.launch(arrayOf("*/*")) },
-                icon           = { Icon(Icons.Rounded.FolderOpen, null) },
-                text           = { Text("Buka File") },
-                containerColor = MaterialTheme.colorScheme.primary,
-                contentColor   = MaterialTheme.colorScheme.onPrimary,
-                expanded       = recentFiles.isEmpty()
-            )
+        bottomBar = {
+            Column {
+                HorizontalDivider(thickness = 0.5.dp)
+                NavigationBar(
+                    containerColor = MaterialTheme.colorScheme.surface,
+                    tonalElevation = 0.dp,
+                ) {
+                    NavigationBarItem(
+                        selected = selectedTab == HomeTab.FILES,
+                        onClick  = { selectedTab = HomeTab.FILES },
+                        icon = {
+                            Icon(
+                                if (selectedTab == HomeTab.FILES) Icons.Rounded.FolderOpen
+                                else Icons.Outlined.FolderOpen,
+                                contentDescription = null
+                            )
+                        },
+                        label = { Text("File") },
+                        colors = NavigationBarItemDefaults.colors(
+                            indicatorColor = MaterialTheme.colorScheme.primaryContainer,
+                        )
+                    )
+                    NavigationBarItem(
+                        selected = selectedTab == HomeTab.ENCODE_DECODE,
+                        onClick  = { selectedTab = HomeTab.ENCODE_DECODE },
+                        icon = {
+                            Icon(
+                                if (selectedTab == HomeTab.ENCODE_DECODE) Icons.Outlined.Lock
+                                else Icons.Outlined.LockOpen,
+                                contentDescription = null
+                            )
+                        },
+                        label = { Text("Encode/Decode") },
+                        colors = NavigationBarItemDefaults.colors(
+                            indicatorColor = MaterialTheme.colorScheme.primaryContainer,
+                        )
+                    )
+                }
+            }
         }
     ) { innerPadding ->
         AnimatedContent(
+            targetState    = selectedTab,
+            transitionSpec = {
+                val toRight = targetState.ordinal > initialState.ordinal
+                val enter = slideInHorizontally(
+                    animationSpec  = tween(280, easing = FastOutSlowInEasing),
+                    initialOffsetX = { if (toRight) it / 5 else -it / 5 }
+                ) + fadeIn(tween(200))
+                val exit = slideOutHorizontally(
+                    animationSpec = tween(280, easing = FastOutSlowInEasing),
+                    targetOffsetX = { if (toRight) -it / 5 else it / 5 }
+                ) + fadeOut(tween(150))
+                enter togetherWith exit
+            },
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(innerPadding),
+        ) { tab ->
+            when (tab) {
+                HomeTab.FILES        -> FileTab(
+                    vm                 = vm,
+                    onOpenFile         = onOpenFile,
+                    onShowInterstitial = onShowInterstitial,
+                )
+                HomeTab.ENCODE_DECODE -> EncodeDecodeScreen()
+            }
+        }
+    }
+}
+
+// ── File tab ──────────────────────────────────────────────────────────────────
+
+@Composable
+private fun FileTab(
+    vm                 : HomeViewModel,
+    onOpenFile         : (Uri) -> Unit,
+    onShowInterstitial : (() -> Unit) -> Unit,
+) {
+    val recentFiles       by vm.recentFiles.collectAsStateWithLifecycle()
+    val licenseState      by vm.licenseVm.licenseState.collectAsStateWithLifecycle()
+    val noAdsState        by RewardedNoAdsManager.state.collectAsStateWithLifecycle()
+    var showClearDialog   by remember { mutableStateOf(false) }
+    val snackbarHostState = remember { SnackbarHostState() }
+    val scope             = rememberCoroutineScope()
+    var fileOpenCount     by remember { mutableStateOf(0) }
+
+    var tickMs by remember { mutableLongStateOf(System.currentTimeMillis()) }
+    LaunchedEffect(Unit) {
+        while (true) {
+            kotlinx.coroutines.delay(1_000)
+            tickMs = System.currentTimeMillis()
+        }
+    }
+    val isNoAdsActive = (noAdsState.noAdsUntil - tickMs).coerceAtLeast(0L) > 0L
+    val isAdsDisabled = licenseState.isNoAds || isNoAdsActive
+
+    val handleOpenFile: (Uri) -> Unit = { uri ->
+        fileOpenCount++
+        if (!isAdsDisabled && fileOpenCount % 2 == 0 && AdsManager.interstitialReady.value) {
+            onShowInterstitial { onOpenFile(uri) }
+        } else {
+            onOpenFile(uri)
+        }
+    }
+
+    val filePicker = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri: Uri? -> uri?.let { handleOpenFile(it) } }
+
+    Box(Modifier.fillMaxSize()) {
+        AnimatedContent(
             targetState    = recentFiles.isEmpty(),
             transitionSpec = { fadeIn(tween(220)) togetherWith fadeOut(tween(120)) },
-            modifier       = Modifier.fillMaxSize().padding(innerPadding)
+            modifier       = Modifier.fillMaxSize()
         ) { isEmpty ->
             if (isEmpty) {
                 EmptyState(
@@ -171,8 +240,7 @@ fun HomeScreen(
                     modifier       = Modifier.fillMaxSize(),
                     contentPadding = PaddingValues(bottom = 100.dp),
                 ) {
-
-                    // ── Section header ────────────────────────────────────────
+                    // ── Section header ────────────────────────────────────
                     item {
                         Row(
                             modifier = Modifier
@@ -219,7 +287,7 @@ fun HomeScreen(
                         }
                     }
 
-                    // ── File list card ────────────────────────────────────────
+                    // ── File list card ────────────────────────────────────
                     item {
                         Surface(
                             modifier       = Modifier
@@ -264,6 +332,26 @@ fun HomeScreen(
                 }
             }
         }
+
+        // FAB di atas konten tab (bukan di Scaffold agar tidak muncul di tab Encode)
+        ExtendedFloatingActionButton(
+            onClick        = { filePicker.launch(arrayOf("*/*")) },
+            icon           = { Icon(Icons.Rounded.FolderOpen, null) },
+            text           = { Text("Buka File") },
+            containerColor = MaterialTheme.colorScheme.primary,
+            contentColor   = MaterialTheme.colorScheme.onPrimary,
+            expanded       = recentFiles.isEmpty(),
+            modifier       = Modifier
+                .align(Alignment.BottomEnd)
+                .padding(end = 16.dp, bottom = 16.dp),
+        )
+
+        SnackbarHost(
+            hostState = snackbarHostState,
+            modifier  = Modifier
+                .align(Alignment.BottomCenter)
+                .padding(bottom = 72.dp),
+        )
     }
 
     if (showClearDialog) {

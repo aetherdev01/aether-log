@@ -136,36 +136,34 @@ fun SettingsScreen(
         ) {
 
             // ── No Ads & Lisensi ──────────────────────────────────────────────
+            item { SectionLabel("No Ads & Lisensi") }
             item {
-                Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                    SectionLabel("Ads & Lisensi")
-                    SettingsCard {
-                        if (isPremium) {
-                            LicenseStatusRow(
-                                isFirst     = true,
-                                isLast      = true,
-                                productName = licenseState.productName,
-                                onClick     = onOpenLicenseFromSettings,
-                            )
-                        } else {
-                            NoAdsRewardedRow(
-                                isActive        = isNoAdsActive,
-                                remainingMs     = remainingMs,
-                                remainingClaims = noAdsState.remainingClaims,
-                                canWatch        = noAdsState.canWatchRewarded,
-                                rewardedReady   = rewardedReady,
-                                onWatch         = { handleWatchRewarded() },
-                                isFirst         = true,
-                                isLast          = false,
-                            )
-                            RowDivider()
-                            LicenseStatusRow(
-                                isFirst     = false,
-                                isLast      = true,
-                                productName = licenseState.productName,
-                                onClick     = onOpenLicenseFromSettings,
-                            )
-                        }
+                SettingsCard {
+                    if (isPremium) {
+                        LicenseStatusRow(
+                            isFirst     = true,
+                            isLast      = true,
+                            productName = licenseState.productName,
+                            onClick     = onOpenLicenseFromSettings,
+                        )
+                    } else {
+                        NoAdsRewardedRow(
+                            isActive        = isNoAdsActive,
+                            remainingMs     = remainingMs,
+                            remainingClaims = noAdsState.remainingClaims,
+                            canWatch        = noAdsState.canWatchRewarded,
+                            rewardedReady   = rewardedReady,
+                            onWatch         = { handleWatchRewarded() },
+                            isFirst         = true,
+                            isLast          = false,
+                        )
+                        RowDivider()
+                        LicenseStatusRow(
+                            isFirst     = false,
+                            isLast      = true,
+                            productName = licenseState.productName,
+                            onClick     = onOpenLicenseFromSettings,
+                        )
                     }
                 }
             }
@@ -398,7 +396,7 @@ private fun NoAdsRewardedRow(
                     Text(
                         text = when {
                             isActive        -> "Iklan dinonaktifkan sementara"
-                            !canWatch        -> "Batas harian tercapai · Reset jam 00:00"
+                            !canWatch        -> "Batas harian tercapai · reset tengah malam"
                             !rewardedReady   -> "Memuat iklan, harap tunggu…"
                             else             -> "Tonton 1 iklan · bebas iklan 5 menit"
                         },
