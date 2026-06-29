@@ -96,23 +96,14 @@ fun LogLogTheme(
         // Android 12+ → Material You dari wallpaper
         dynamicColor && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S -> {
             val context = LocalContext.current
+            // Dynamic light & dark: seluruh palet (termasuk background/surface)
+            // diambil langsung dari sistem agar benar-benar ikut warna wallpaper.
+            // Kita tidak meng-override background/surface lagi seperti sebelumnya,
+            // karena itu yang membuat tema terasa tidak berubah saat wallpaper diganti.
             if (darkTheme) {
                 dynamicDarkColorScheme(context)
             } else {
-                // Dynamic light: primary/secondary/tertiary ikut wallpaper,
-                // tapi surface & background di-pin ke warm palette kita
-                // agar tidak putih murni saat wallpaper default terang.
-                dynamicLightColorScheme(context).copy(
-                    background              = md_theme_light_background,
-                    onBackground            = md_theme_light_onBackground,
-                    surface                 = md_theme_light_surface,
-                    onSurface               = md_theme_light_onSurface,
-                    surfaceContainerLowest  = md_theme_light_surfaceContainerLowest,
-                    surfaceContainerLow     = md_theme_light_surfaceContainerLow,
-                    surfaceContainer        = md_theme_light_surfaceContainer,
-                    surfaceContainerHigh    = md_theme_light_surfaceContainerHigh,
-                    surfaceContainerHighest = md_theme_light_surfaceContainerHighest,
-                )
+                dynamicLightColorScheme(context)
             }
         }
         darkTheme -> DarkColorScheme
