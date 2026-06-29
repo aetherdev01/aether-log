@@ -185,6 +185,7 @@ private fun ActiveLicenseSection(
                 val totalDays    = TimeUnit.MILLISECONDS.toDays(state.expiresAt - nowMs).coerceAtLeast(0L)
                 val hours        = TimeUnit.MILLISECONDS.toHours(remainMs) % 24
                 val minutes      = TimeUnit.MILLISECONDS.toMinutes(remainMs) % 60
+                val seconds      = TimeUnit.MILLISECONDS.toSeconds(remainMs) % 60
                 val isNearExpiry = totalDays <= 7
 
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -241,6 +242,8 @@ private fun ActiveLicenseSection(
                             CountdownUnit(hours.toString().padStart(2, '0'), "JAM")
                             CountdownSep()
                             CountdownUnit(minutes.toString().padStart(2, '0'), "MENIT")
+                            CountdownSep()
+                            CountdownUnit(seconds.toString().padStart(2, '0'), "DETIK")
                         }
                     }
 
