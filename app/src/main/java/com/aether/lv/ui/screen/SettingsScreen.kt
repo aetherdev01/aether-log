@@ -68,12 +68,11 @@ fun SettingsScreen(
     val isNoAdsActive = remainingMs > 0L
     val isPremium     = licenseState.isNoAds
 
-    var toggleCount by remember { mutableIntStateOf(0) }
+    // Interstitial untuk transisi masuk/keluar Settings sudah ditangani
+    // otomatis secara terpusat di LogLogApp (listener navigasi), jadi
+    // toggle preferensi di sini langsung diterapkan tanpa iklan tambahan.
     fun doToggle(applyPref: () -> Unit) {
-        toggleCount++
-        if (!isPremium && toggleCount % 3 == 0 && AdsManager.interstitialReady.value)
-            onShowInterstitial { applyPref() }
-        else applyPref()
+        applyPref()
     }
 
     LaunchedEffect(updateState.noUpdateEvent) {

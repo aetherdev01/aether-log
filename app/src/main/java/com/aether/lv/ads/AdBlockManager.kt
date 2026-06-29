@@ -16,11 +16,11 @@ private const val TAG = "AdBlockManager"
 /**
  * Orchestrator untuk AdBlock detection & state management.
  *
- * Siklus deteksi:
- * 1. App dibuka → tunggu grace period (12 detik) agar SDK ada cukup waktu init
+ * Siklus deteksi (dipercepat):
+ * 1. App dibuka → tunggu grace period (3 detik) agar SDK ada cukup waktu mulai init
  * 2. Jalankan AdBlockDetector.detect()
  * 3. Jika BLOCKED → tampilkan dialog (via state flow)
- * 4. User klik "Sudah Dinonaktifkan" → re-check setelah 3 detik
+ * 4. User klik "Sudah Dinonaktifkan" → re-check setelah 2 detik
  * 5. Jika masih blocked → tampilkan dialog lagi
  * 6. Jika clean → lanjutkan normal
  *
@@ -49,8 +49,8 @@ object AdBlockManager {
     // Flag: deteksi pertama sudah dijadwalkan (cegah double-fire)
     @Volatile private var detectionStarted = false
 
-    private const val INITIAL_GRACE_MS = 5_000L
-    private const val RECHECK_DELAY_MS = 3_000L
+    private const val INITIAL_GRACE_MS = 3_000L
+    private const val RECHECK_DELAY_MS = 2_000L
     private const val MAX_RECHECKS     = 5
 
     /**

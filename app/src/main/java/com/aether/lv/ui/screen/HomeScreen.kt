@@ -28,8 +28,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
-import com.aether.lv.ads.AdsManager
-import com.aether.lv.ads.RewardedNoAdsManager
 import com.aether.lv.data.model.RecentFile
 import com.aether.lv.ui.component.FloatingPillNav
 import com.aether.lv.ui.component.PillNavItem
@@ -229,30 +227,15 @@ private fun FileTab(
     onShowInterstitial : (() -> Unit) -> Unit,
 ) {
     val recentFiles       by vm.recentFiles.collectAsStateWithLifecycle()
-    val licenseState      by vm.licenseVm.licenseState.collectAsStateWithLifecycle()
-    val noAdsState        by RewardedNoAdsManager.state.collectAsStateWithLifecycle()
     var showClearDialog   by remember { mutableStateOf(false) }
     val snackbarHostState = remember { SnackbarHostState() }
     val scope             = rememberCoroutineScope()
-    var fileOpenCount     by remember { mutableStateOf(0) }
-
-    var tickMs by remember { mutableLongStateOf(System.currentTimeMillis()) }
-    LaunchedEffect(Unit) {
-        while (true) {
-            kotlinx.coroutines.delay(1_000)
-            tickMs = System.currentTimeMillis()
-        }
-    }
-    val isNoAdsActive = (noAdsState.noAdsUntil - tickMs).coerceAtLeast(0L) > 0L
-    val isAdsDisabled = licenseState.isNoAds || isNoAdsActive
 
     val handleOpenFile: (Uri) -> Unit = { uri ->
-        fileOpenCount++
-        if (!isAdsDisabled && fileOpenCount % 2 == 0 && AdsManager.interstitialReady.value) {
-            onShowInterstitial { onOpenFile(uri) }
-        } else {
-            onOpenFile(uri)
-        }
+        // Interstitial untuk transisi Home → Viewer sudah ditangani otomatis
+        // secara terpusat di LogLogApp (listener navigasi), jadi di sini
+        // cukup langsung lanjut membuka file.
+        onOpenFile(uri)
     }
 
     val filePicker = rememberLauncherForActivityResult(

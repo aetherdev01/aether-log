@@ -30,6 +30,30 @@ object AdsManager {
     private val _isAdShowing = MutableStateFlow(false)
     val isAdShowing: StateFlow<Boolean> = _isAdShowing.asStateFlow()
 
+    // ── Cooldown global untuk interstitial otomatis (navigasi antar-screen) ────
+    // Mencegah interstitial muncul bertubi-tubi jika user pindah screen
+    // berkali-kali dalam waktu singkat. Tidak memengaruhi trigger manual
+    // lain yang sudah punya gating sendiri (mis. toggle ke-3 di Settings).
+    private const val AUTO_INTERSTITIAL_COOLDOWN_MS = 45_000L
+
+    @Volatile private var lastAutoInterstitialAtMs = 0L
+
+    /**
+     * Cek & "klaim" slot cooldown untuk interstitial otomatis.
+     * Mengembalikan true jika sudah boleh tampil sekarang (dan langsung
+     * mencatat waktunya), false jika masih dalam cooldown.
+     * Thread-safe sederhana via synchronized — dipanggil dari main thread saja.
+     */
+    @Synchronized
+    fun tryClaimAutoInterstitialSlot(): Boolean {
+        val now = System.currentTimeMillis()
+        if (now - lastAutoInterstitialAtMs < AUTO_INTERSTITIAL_COOLDOWN_MS) {
+            return false
+        }
+        lastAutoInterstitialAtMs = now
+        return true
+    }
+
     // ── Unit IDs dari native layer (XOR-encoded di liblv.so) ──────────────────
 
     val GAME_ID: String by lazy { AdsNative.getGameId() }

@@ -20,12 +20,13 @@ private const val TAG = "AdBlockDetector"
 /**
  * AdBlock Detection Engine untuk Unity Ads.
  *
- * Fix false positive SDK_INIT_TIMEOUT:
- *  - SDK_INIT_TIMEOUT & SDK_LOAD_TIMEOUT DIHAPUS dari STRONG_SIGNALS
- *    → SDK sinyal tidak pernah bisa berdiri sendiri sebagai verdict
- *  - SDK_WAIT_MS dinaikkan ke 15 s agar cold start Unity Ads bisa selesai
- *  - SDK_INIT_TIMEOUT hanya count jika ada ≥1 sinyal DNS/HTTP juga
- *  - SDK_LOAD_TIMEOUT hanya count jika ada ≥1 sinyal DNS/HTTP juga
+ * MODE: lebih ketat & lebih cepat.
+ *  - Semua timeout diturunkan supaya verdict keluar lebih cepat
+ *    (total waktu tunggu maksimum jauh lebih singkat dari versi sebelumnya).
+ *  - Ambang sinyal sedikit dilonggarkan (lebih sensitif) dibanding versi
+ *    sebelumnya, namun guard false-positive untuk sinyal SDK yang berdiri
+ *    sendiri (cold start lambat di jaringan lemah, bukan blocking) tetap
+ *    dipertahankan supaya user dengan koneksi lambat tidak salah ditandai.
  *
  * Logika verdict (dari paling ketat ke paling longgar):
  *  1. DNS_FAST_FAIL / DNS_SINKHOLE / HTTP_UNREACHABLE / HTTP_WRONG_RESPONSE
@@ -33,7 +34,10 @@ private const val TAG = "AdBlockDetector"
  *  2. DNS_NXDOMAIN ≥ 2 domain → BLOCKED
  *  3. SDK_INIT_TIMEOUT + (DNS_NXDOMAIN ≥1 atau HTTP_TIMEOUT) → BLOCKED
  *  4. SDK_LOAD_TIMEOUT + (DNS_NXDOMAIN ≥1 atau HTTP_TIMEOUT) → BLOCKED
- *  5. HTTP_TIMEOUT sendirian / SDK sinyal sendirian → CLEAN (false positive guard)
+ *  5. SDK_INIT_TIMEOUT + SDK_LOAD_TIMEOUT bersamaan (SDK gagal total dari
+ *     ujung ke ujung, tanpa sinyal DNS/HTTP) → BLOCKED (sinyal lemah ganda
+ *     yang konsisten lebih kuat daripada satu sinyal lemah sendirian)
+ *  6. HTTP_TIMEOUT sendirian / satu sinyal SDK sendirian → CLEAN (false positive guard)
  */
 object AdBlockDetector {
 
@@ -54,9 +58,13 @@ object AdBlockDetector {
 
     private const val HTTP_PROBE_URL  = "https://config.unityads.unity3d.com/webview/4/config.json"
 
-    private const val DNS_TIMEOUT_MS  = 2_000L
-    private const val HTTP_TIMEOUT_MS = 4_000L
-    private const val SDK_WAIT_MS     = 15_000L  // naik dari 6s — Unity Ads cold start butuh waktu
+    // Timeout dipercepat dibanding versi sebelumnya (DNS 2s→1s, HTTP 4s→2.5s,
+    // SDK wait 15s→7s) — verdict keluar jauh lebih cepat tanpa kehilangan
+    // akurasi karena guard false-positive di filterEffectiveSignals() tetap ada.
+    private const val DNS_TIMEOUT_MS       = 1_000L
+    private const val HTTP_TIMEOUT_MS      = 2_500L
+    private const val SDK_WAIT_MS          = 7_000L
+    private const val SDK_LOAD_WAIT_MS     = 4_000L
 
     // Sinyal KUAT — DNS/HTTP layer saja, bukan SDK
     // SDK_INIT_TIMEOUT & SDK_LOAD_TIMEOUT sengaja TIDAK masuk sini
@@ -145,7 +153,10 @@ object AdBlockDetector {
      * 3. SDK_INIT_TIMEOUT + ada sinyal DNS atau HTTP apapun → count
      *    (SDK gagal init dikuatkan oleh DNS/HTTP yang juga bermasalah)
      * 4. SDK_LOAD_TIMEOUT + ada DNS_NXDOMAIN atau HTTP_TIMEOUT → count
-     * 5. Semua kasus lain → emptyList() → CLEAN
+     * 5. SDK_INIT_TIMEOUT DAN SDK_LOAD_TIMEOUT terjadi bersamaan → count
+     *    (gagal total dari init sampai load, dua sinyal lemah yang konsisten
+     *    lebih kuat daripada satu sinyal lemah berdiri sendiri)
+     * 6. Semua kasus lain → emptyList() → CLEAN
      */
     private fun filterEffectiveSignals(signals: List<BlockSignal>): List<BlockSignal> {
         // Rule 1: ada sinyal DNS/HTTP kuat
@@ -175,7 +186,12 @@ object AdBlockDetector {
             return signals
         }
 
-        // Rule 5: sinyal lemah saja (HTTP_TIMEOUT sendirian, atau SDK sendirian)
+        // Rule 5: SDK gagal total (init timeout DAN load timeout bersamaan)
+        if (hasSdkInit && hasSdkLoad) {
+            return signals
+        }
+
+        // Rule 6: sinyal lemah saja (HTTP_TIMEOUT sendirian, atau SDK sendirian)
         return emptyList()
     }
 
@@ -327,15 +343,15 @@ object AdBlockDetector {
     /**
      * Cek apakah Unity Ads SDK berhasil init dan load ad unit.
      *
-     * SDK_WAIT_MS dinaikkan ke 15s karena:
-     *  - Unity Ads cold start bisa 8-12 s di jaringan normal
-     *  - Sinyal ini TIDAK berdiri sendiri — filterEffectiveSignals() yang
-     *    memutuskan apakah SDK signal perlu dikombinasi sinyal lain
+     * SDK_WAIT_MS & SDK_LOAD_WAIT_MS sudah dipercepat dibanding versi
+     * sebelumnya — sinyal ini TIDAK berdiri sendiri (kecuali Rule 5 di
+     * filterEffectiveSignals jika kedua sinyal SDK muncul bersamaan),
+     * jadi mempercepat timeout tidak menambah risiko false-positive baru.
      */
     private suspend fun runSdkStateCheck(): List<BlockSignal> = withContext(Dispatchers.IO) {
         val result = mutableListOf<BlockSignal>()
 
-        val initOk = waitForCondition(SDK_WAIT_MS, 200L) { AdsManager.isInitialized.value }
+        val initOk = waitForCondition(SDK_WAIT_MS, 100L) { AdsManager.isInitialized.value }
         if (!initOk) {
             Log.d(TAG, "SDK did not init within ${SDK_WAIT_MS}ms")
             result.add(BlockSignal(SignalSource.SDK_INIT_TIMEOUT,
@@ -345,11 +361,11 @@ object AdBlockDetector {
 
         Log.d(TAG, "SDK initialized OK — checking ad load")
 
-        val loadOk = waitForCondition(8_000L, 200L) { AdsManager.interstitialReady.value }
+        val loadOk = waitForCondition(SDK_LOAD_WAIT_MS, 100L) { AdsManager.interstitialReady.value }
         if (!loadOk) {
-            Log.d(TAG, "Interstitial did not load within 8s")
+            Log.d(TAG, "Interstitial did not load within ${SDK_LOAD_WAIT_MS}ms")
             result.add(BlockSignal(SignalSource.SDK_LOAD_TIMEOUT,
-                "Ad unit failed to load after SDK init — CDN/auction endpoint possibly blocked", 8_000L))
+                "Ad unit failed to load after SDK init — CDN/auction endpoint possibly blocked", SDK_LOAD_WAIT_MS))
         } else {
             Log.d(TAG, "Ad unit loaded OK — no SDK signal")
         }

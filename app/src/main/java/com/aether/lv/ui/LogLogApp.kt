@@ -6,11 +6,13 @@ import androidx.compose.animation.*
 import androidx.compose.animation.core.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.platform.LocalContext
+import androidx.navigation.NavController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import com.aether.lv.ads.AdBlockDialog
 import com.aether.lv.ads.AdBlockManager
+import com.aether.lv.ads.AdsManager
 import com.aether.lv.data.preferences.ThemePreferences
 import com.aether.lv.ui.screen.AboutScreen
 import com.aether.lv.ui.screen.EditorScreen
@@ -77,6 +79,41 @@ fun LogLogApp(
             pendingFileUri     = externalFileUri
             navController.navigate(Screen.Viewer.route) { launchSingleTop = true }
         }
+    }
+
+    // ── Interstitial otomatis saat pindah screen ────────────────────────────
+    // Dipasang terpusat di sini (bukan per-screen) agar berlaku konsisten
+    // ke SEMUA route, termasuk yang akan ditambah di masa depan.
+    //
+    // Aturan:
+    //  - Hanya trigger saat navigasi MAJU (buka screen baru via navigate()),
+    //    bukan saat back/pop — supaya tombol back/batal tidak pernah
+    //    diganggu iklan.
+    //  - Cooldown global (lihat AdsManager.tryClaimAutoInterstitialSlot)
+    //    mencegah iklan muncul bertubi-tubi jika user pindah screen cepat.
+    //  - Tidak trigger untuk render pertama (start destination).
+    //  - onShowInterstitial sendiri sudah no-op aman untuk user premium/no-ads
+    //    (lihat MainActivity.showInterstitialAd → isPremiumNoAds()).
+    DisposableEffect(navController) {
+        var previousStackSize = navController.currentBackStack.value.size
+        var isFirstCallback    = true
+
+        val listener = NavController.OnDestinationChangedListener { controller, _, _ ->
+            val newStackSize = controller.currentBackStack.value.size
+
+            if (!isFirstCallback) {
+                val isForwardNavigation = newStackSize > previousStackSize
+                if (isForwardNavigation && AdsManager.tryClaimAutoInterstitialSlot()) {
+                    onShowInterstitial { /* navigasi sudah terjadi; ini hanya jeda iklan */ }
+                }
+            }
+
+            isFirstCallback    = false
+            previousStackSize  = newStackSize
+        }
+
+        navController.addOnDestinationChangedListener(listener)
+        onDispose { navController.removeOnDestinationChangedListener(listener) }
     }
 
     // ── AdBlock dialog state ───────────────────────────────────────────────
